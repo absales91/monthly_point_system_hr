@@ -6,6 +6,8 @@ use App\Http\Controllers\EmployeeOfMonthController;
 use App\Http\Controllers\MonthlyReportController;
 use App\Http\Controllers\MyReportController;
 use App\Http\Controllers\PointRuleController;
+use App\Http\Controllers\RewardController;
+use App\Http\Controllers\RewardRuleController;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome');
@@ -18,7 +20,21 @@ Route::view('profile', 'profile')
     ->middleware(['auth'])
     ->name('profile');
 
+Route::middleware(['auth'])->group(function () {
 
+    // 🔁 Reward Rules (ADMIN)
+    Route::get('/reward-rules', [RewardRuleController::class, 'index'])
+        ->name('reward-rules.index');
+
+    Route::get('/reward-rules/create', [RewardRuleController::class, 'create'])
+        ->name('reward-rules.create');
+    Route::post('/reward-rule/generate',[RewardController::class,'generate'])
+        ->name('reward.generate');
+
+    Route::post('/reward-rules', [RewardRuleController::class, 'store'])
+        ->name('reward-rules.store');
+
+});
 
 Route::middleware(['auth'])->group(function () {
    Route::get('/employees', [EmployeeController::class, 'index'])

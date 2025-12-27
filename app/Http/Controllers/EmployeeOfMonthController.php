@@ -28,7 +28,7 @@ class EmployeeOfMonthController extends Controller
         try {
             EmployeeOfMonthService::generate($request->month);
         } catch (\Exception $e) {
-            dd($e);
+           
             return back()->withErrors(['month' => $e->getMessage()]);
         }
 

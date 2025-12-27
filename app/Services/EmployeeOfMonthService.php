@@ -19,31 +19,23 @@ class EmployeeOfMonthService
         }
 
         // 🔍 Pick top 2 employees
-        $winners = MonthlyPoint::where('month', $month)
-            ->whereHas('employee', fn ($q) => $q->where('role', 'employee'))
-            ->orderByDesc('total')
-            ->orderByDesc('attendance')
-            ->orderBy('created_at')
-            ->limit(2)
-            ->get();
+      $winner = MonthlyPoint::where('month', $month)
+    ->whereHas('employee', fn ($q) => $q->where('role', 'employee'))
+    ->orderByDesc('total')
+    ->orderByDesc('attendance')
+    ->orderBy('created_at')
+    ->first();
 
-        if ($winners->count() < 2) {
-            throw new \Exception('Not enough employees to announce.');
-        }
+if (!$winner) {
+    throw new \Exception('Not enough employees to announce.');
+}
 
-        // 🏆 Store winners
-        $records = collect();
+EmployeeOfMonth::create([
+    'month'       => $month,
+    'employee_id' => $winner->employee_id,
+    'points'      => $winner->total,
+]);
 
-        foreach ($winners as $winner) {
-            $records->push(
-                EmployeeOfMonth::create([
-                    'month'       => $month,
-                    'employee_id' => $winner->employee_id,
-                    'points'      => $winner->total,
-                ])
-            );
-        }
-
-        return $records; // ✅ return both winners
+return collect([$winner]); // ✅ return both winners
     }
 }

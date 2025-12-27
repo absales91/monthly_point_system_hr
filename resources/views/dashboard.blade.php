@@ -26,6 +26,26 @@
     @if(auth()->user()->role === 'employee')
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {{-- My Wallet --}}
+<div class="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl shadow-lg p-6">
+    <h4 class="text-lg font-semibold">My Wallet 💼</h4>
+    <p class="text-sm opacity-90 mt-1">
+        Reward points balance
+    </p>
+
+    <div class="mt-5 space-y-2">
+        <p class="text-sm">
+            <strong>Available Points:</strong>
+            {{ $myWallet->available_points ?? 0 }}
+        </p>
+
+        <p class="text-sm">
+            <strong>Lifetime Points:</strong>
+            {{ $myWallet->lifetime_points ?? 0 }}
+        </p>
+    </div>
+</div>
+
 
         {{-- My Report --}}
         <div class="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-2xl shadow-lg p-6">
@@ -49,6 +69,19 @@
                 <li>❌ Edit scores</li>
             </ul>
         </div>
+        {{-- My Rewards --}}
+<div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-2xl shadow-lg p-6">
+    <h4 class="text-lg font-semibold">My Rewards 🎁</h4>
+    <p class="text-sm opacity-90 mt-1">
+        Paid leaves, bonuses & badges earned
+    </p>
+
+    <a href="#my-rewards"
+       class="inline-block mt-6 bg-white text-purple-700 px-4 py-2 rounded-lg text-sm font-semibold">
+        View Rewards →
+    </a>
+</div>
+
 
     </div>
 
@@ -144,6 +177,20 @@
         </a>
     </div>
 
+    {{-- Reward Rules --}}
+<div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-2xl shadow-lg p-6">
+    <h4 class="text-lg font-semibold">Reward Rules</h4>
+    <p class="text-sm opacity-90 mt-1">
+        Points → Paid Leave / Bonus logic
+    </p>
+
+    <a href="{{ route('reward-rules.index') }}"
+       class="inline-block mt-6 bg-white text-purple-700 px-4 py-2 rounded-lg text-sm font-semibold">
+        Configure →
+    </a>
+</div>
+
+
     {{-- ✅ NEW: View All Reports --}}
     <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-2xl shadow-lg p-6">
         <h4 class="text-lg font-semibold">All Employee Reports</h4>
@@ -156,6 +203,31 @@
             View Reports →
         </a>
     </div>
+
+    {{-- Generate Rewards --}}
+<div class="bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-2xl shadow-lg p-6">
+    <h4 class="text-lg font-semibold">Generate Rewards</h4>
+    <p class="text-sm opacity-90 mt-1">
+        Convert monthly points into rewards
+    </p>
+
+    <form method="POST"
+          action="{{ route('reward.generate') }}"
+          class="mt-6 flex items-center gap-3">
+        @csrf
+
+        <input type="month"
+               name="month"
+               required
+               class="rounded-lg px-3 py-2 text-sm text-gray-800">
+
+        <button type="submit"
+                class="bg-white text-orange-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-100">
+            Generate →
+        </button>
+    </form>
+</div>
+
 
 </div>
 
