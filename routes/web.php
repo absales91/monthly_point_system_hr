@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\EmployeeOfMonthController;
@@ -20,23 +21,20 @@ Route::view('profile', 'profile')
     ->middleware(['auth'])
     ->name('profile');
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth','role:admin,manager'])->group(function(){
 
-    // 🔁 Reward Rules (ADMIN)
-    Route::get('/reward-rules', [RewardRuleController::class, 'index'])
-        ->name('reward-rules.index');
+    Route::get('/attendance',[AttendanceController::class,'index'])
+        ->name('attendance.index');
 
-    Route::get('/reward-rules/create', [RewardRuleController::class, 'create'])
-        ->name('reward-rules.create');
-    Route::post('/reward-rule/generate',[RewardController::class,'generate'])
-        ->name('reward.generate');
-
-    Route::post('/reward-rules', [RewardRuleController::class, 'store'])
-        ->name('reward-rules.store');
-
+    Route::post('/attendance/store',[AttendanceController::class,'store'])
+        ->name('attendance.store');
 });
 
-Route::middleware(['auth'])->group(function () {
+
+
+
+
+Route::middleware(['auth','role:admin'])->group(function () {
    Route::get('/employees', [EmployeeController::class, 'index'])
         ->name('employees.index');
 
@@ -57,30 +55,65 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/monthly-reports-all', [MonthlyReportController::class, 'index'])
         ->name('monthly-reports-all.index');
+
+    // 🔁 Reward Rules (ADMIN)
+    Route::get('/reward-rules', [RewardRuleController::class, 'index'])
+        ->name('reward-rules.index');
+
+    Route::get('/reward-rules/create', [RewardRuleController::class, 'create'])
+        ->name('reward-rules.create');
+    Route::post('/reward-rule/generate',[RewardController::class,'generate'])
+        ->name('reward.generate');
+
+    Route::post('/reward-rules', [RewardRuleController::class, 'store'])
+        ->name('reward-rules.store');
+
 });
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth','role:admin,manager'])->group(function () {
+    //
     Route::get('/monthly-reports/create', [MonthlyReportController::class, 'create'])
         ->name('monthly-reports.create');
 
     Route::post('/monthly-reports', [MonthlyReportController::class, 'store'])
         ->name('monthly-reports.store');
-});
-
-Route::middleware(['auth'])->get('/my-report', [MyReportController::class, 'index'])
-    ->name('my-report');
-
-    Route::middleware(['auth'])->group(function () {
-
+// ================= EMPLOYEE OF THE MONTH =================
     Route::get('/employee-of-month',
         [EmployeeOfMonthController::class,'index']
     )->name('employee-of-month.index');
 
-    Route::post('/employee-of-month/announce',
+     Route::post('/employee-of-month/announce',
         [EmployeeOfMonthController::class,'announce']
     )->name('employee-of-month.announce');
-
+// ==========================================================
 });
 
+Route::middleware(['auth','role:employee,manager'])->group(function(){
+    Route::get('/my-report', [MyReportController::class, 'index'])
+    ->name('my-report');
+
+      Route::get('/my-attendance',[AttendanceController::class,'myAttendance'])
+        ->name('attendance.my');
+
+    Route::post('/attendance/check-in',[AttendanceController::class,'checkIn'])
+        ->name('attendance.checkin');
+
+    Route::post('/attendance/check-out',[AttendanceController::class,'checkOut'])
+        ->name('attendance.checkout');
+
+     Route::get('/employee/salary-slip/{month}/{year}',
+        [EmployeeController::class,'salarySlipDownload']
+    )->name('salary-slip.download');
+});
+
+
+Route::middleware(['auth','role:employee'])->group(function(){
+
+   
+
+   
+});
+
+    
 
 require __DIR__.'/auth.php';
