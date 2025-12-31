@@ -56,6 +56,7 @@ class DashboardController extends Controller
                 'salary' => round($salary),
                 'checked_in' => $attendance && $attendance->check_in ? true : false,
                 'checked_out' => $attendance && $attendance->check_out ? true : false,
+                 'today_status' => $attendance?->status ?? 'not_marked',
             ]
         ]);
     }
