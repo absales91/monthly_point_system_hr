@@ -50,7 +50,7 @@ class AttendanceController extends Controller
         ]);
     }
 
-    public function checkOut(Request $request)
+   public function checkOut(Request $request)
 {
     $request->validate([
         'latitude' => 'required',
@@ -58,11 +58,15 @@ class AttendanceController extends Controller
         'image' => 'required|image|max:2048',
     ]);
 
-    $employee = auth()->user(); // employee table
-    $today = Carbon::today();
+    $employee = auth()->user();
 
+    // ✅ FORCE IST EVERYWHERE
+    $now = Carbon::now('Asia/Kolkata');
+    $today = $now->toDateString();
+
+    // ✅ ALWAYS USE whereDate
     $attendance = Attendance::where('employee_id', $employee->id)
-        ->where('date', $today)
+        ->whereDate('date', $today)
         ->first();
 
     if (!$attendance || !$attendance->check_in) {
@@ -79,12 +83,19 @@ class AttendanceController extends Controller
         ], 400);
     }
 
-    // 🕒 Calculate working minutes
-    $checkIn  = Carbon::parse($attendance->check_in);
-    $checkOut = Carbon::now();
-    $minutes  = $checkOut->diffInMinutes($checkIn);
+    // ✅ ATTACH DATE TO CHECK-IN TIME (CRITICAL)
+    $checkIn = Carbon::createFromFormat(
+        'Y-m-d H:i:s',
+        $attendance->date . ' ' . $attendance->check_in,
+        'Asia/Kolkata'
+    );
 
-    // 🟢 Status logic
+    $checkOut = Carbon::now('Asia/Kolkata');
+
+    // ✅ ABSOLUTE SAFE MINUTES
+    $minutes = abs($checkOut->diffInMinutes($checkIn));
+
+    // 🟢 STATUS LOGIC
     if ($minutes >= 480) {
         $status = 'present';
     } elseif ($minutes >= 240) {
@@ -93,8 +104,8 @@ class AttendanceController extends Controller
         $status = 'absent';
     }
 
-    // 📸 Save selfie
-    $path = $request->file('image')->store('attendance', 'public');
+    // 📸 SAVE SELFIE
+    $request->file('image')->store('attendance', 'public');
 
     $attendance->update([
         'check_out' => $checkOut->format('H:i:s'),
@@ -106,6 +117,12 @@ class AttendanceController extends Controller
         'success' => true,
         'message' => 'Check-out successful',
         'working_minutes' => $minutes,
+        'debug' => [
+            'check_in' => $checkIn->format('Y-m-d H:i:s'),
+            'check_out' => $checkOut->format('Y-m-d H:i:s'),
+            'timezone' => 'Asia/Kolkata',
+        ],
     ]);
 }
+
 }
