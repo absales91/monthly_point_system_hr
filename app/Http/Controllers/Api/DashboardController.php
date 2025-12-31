@@ -17,19 +17,19 @@ class DashboardController extends Controller
         $month = Carbon::now()->month;
         $year  = Carbon::now()->year;
 
-        $present = Attendance::where('user_id', $user->id)
+        $present = Attendance::where('employee_id', $user->id)
             ->whereMonth('date', $month)
             ->whereYear('date', $year)
             ->where('status', 'present')
             ->count();
 
-        $halfDay = Attendance::where('user_id', $user->id)
+        $halfDay = Attendance::where('employee_id', $user->id)
             ->whereMonth('date', $month)
             ->whereYear('date', $year)
             ->where('status', 'half_day')
             ->count();
 
-        $absent = Attendance::where('user_id', $user->id)
+        $absent = Attendance::where('employee_id', $user->id)
             ->whereMonth('date', $month)
             ->whereYear('date', $year)
             ->where('status', 'absent')
