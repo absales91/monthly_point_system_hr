@@ -49,4 +49,63 @@ class AttendanceController extends Controller
             'message' => 'Check-in successful'
         ]);
     }
+
+    public function checkOut(Request $request)
+{
+    $request->validate([
+        'latitude' => 'required',
+        'longitude' => 'required',
+        'image' => 'required|image|max:2048',
+    ]);
+
+    $employee = auth()->user(); // employee table
+    $today = Carbon::today();
+
+    $attendance = Attendance::where('employee_id', $employee->id)
+        ->where('date', $today)
+        ->first();
+
+    if (!$attendance || !$attendance->check_in) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Check-in not found',
+        ], 400);
+    }
+
+    if ($attendance->check_out) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Already checked out',
+        ], 400);
+    }
+
+    // 🕒 Calculate working minutes
+    $checkIn  = Carbon::parse($attendance->check_in);
+    $checkOut = Carbon::now();
+    $minutes  = $checkOut->diffInMinutes($checkIn);
+
+    // 🟢 Status logic
+    if ($minutes >= 480) {
+        $status = 'present';
+    } elseif ($minutes >= 240) {
+        $status = 'half_day';
+    } else {
+        $status = 'absent';
+    }
+
+    // 📸 Save selfie
+    $path = $request->file('image')->store('attendance', 'public');
+
+    $attendance->update([
+        'check_out' => $checkOut->format('H:i:s'),
+        'working_minutes' => $minutes,
+        'status' => $status,
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Check-out successful',
+        'working_minutes' => $minutes,
+    ]);
+}
 }

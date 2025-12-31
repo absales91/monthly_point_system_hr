@@ -16,6 +16,7 @@ class DashboardController extends Controller
 
         $month = Carbon::now()->month;
         $year  = Carbon::now()->year;
+        $today = Carbon::today();
 
         $present = Attendance::where('employee_id', $user->id)
             ->whereMonth('date', $month)
@@ -41,6 +42,9 @@ class DashboardController extends Controller
         $salary =
             ($present * $perDaySalary) +
             ($halfDay * ($perDaySalary / 2));
+         $attendance = Attendance::where('employee_id', $user->id)
+        ->whereDate('date', $today)
+        ->first();
 
         return response()->json([
             'success' => true,
@@ -50,6 +54,8 @@ class DashboardController extends Controller
                 'half_day' => $halfDay,
                 'absent' => $absent,
                 'salary' => round($salary),
+                'checked_in' => $attendance && $attendance->check_in ? true : false,
+                'checked_out' => $attendance && $attendance->check_out ? true : false,
             ]
         ]);
     }
