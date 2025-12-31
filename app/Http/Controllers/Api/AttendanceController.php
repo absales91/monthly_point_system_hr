@@ -17,7 +17,8 @@ class AttendanceController extends Controller
         ]);
 
         $employeeId = $request->user()->id; // users = employee
-        $today = Carbon::today()->toDateString();
+         $now = Carbon::now('Asia/Kolkata');
+        $today = $now->toDateString();
 
         // ❌ Already checked-in today
         if (Attendance::where('employee_id', $employeeId)
