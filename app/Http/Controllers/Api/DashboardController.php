@@ -39,7 +39,8 @@ class DashboardController extends Controller
             ->count();
 
         // Salary calculation
-        $perDaySalary = ($user->salary ?? 0) / 30;
+        $perDaySalary = (float) ($user->per_day_salary ?? 0);
+
 
         $salary =
             ($present * $perDaySalary) +
