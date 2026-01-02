@@ -7,6 +7,7 @@ use App\Models\Attendance;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class AttendanceController extends Controller
 {
@@ -40,7 +41,7 @@ class AttendanceController extends Controller
         Attendance::create([
             'employee_id' => $employeeId,
             'date' => $today,
-            'check_in' => Carbon::now()->format('H:i:s'),
+            'check_in' => $now->format('H:i:s'),
             'check_in_image' => $imagePath,
             'latitude' => $request->latitude,
             'longitude' => $request->longitude,
@@ -162,6 +163,13 @@ class AttendanceController extends Controller
                     'check_out' => $row->check_out ?? '--',
                     'working_minutes' => (int) $row->working_minutes,
                     'status' => $row->status,
+                     'check_in_image_url' => $row->check_in_image
+                    ? Storage::url($row->check_in_image)
+                    : null,
+
+                'check_out_image_url' => $row->check_out_image
+                    ? Storage::url($row->check_out_image)
+                    : null,
                 ];
             });
 
