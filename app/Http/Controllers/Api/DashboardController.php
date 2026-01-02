@@ -12,11 +12,13 @@ class DashboardController extends Controller
 {
     public function index(Request $request)
     {
-         $user = $request->user(); // employee itself
+        $user = $request->user(); // employee itself
 
-        $month = Carbon::now()->month;
-        $year  = Carbon::now()->year;
-        $today = Carbon::today();
+        $now = Carbon::now('Asia/Kolkata');
+
+        $month = $now->month;
+        $year  = $now->year;
+        $today = $now->toDateString(); // Y-m-d
 
         $present = Attendance::where('employee_id', $user->id)
             ->whereMonth('date', $month)
@@ -42,9 +44,9 @@ class DashboardController extends Controller
         $salary =
             ($present * $perDaySalary) +
             ($halfDay * ($perDaySalary / 2));
-         $attendance = Attendance::where('employee_id', $user->id)
-        ->whereDate('date', $today)
-        ->first();
+        $attendance = Attendance::where('employee_id', $user->id)
+            ->whereDate('date', $today)
+            ->first();
 
         return response()->json([
             'success' => true,
@@ -56,7 +58,7 @@ class DashboardController extends Controller
                 'salary' => round($salary),
                 'checked_in' => $attendance && $attendance->check_in ? true : false,
                 'checked_out' => $attendance && $attendance->check_out ? true : false,
-                 'today_status' => $attendance?->status ?? 'not_marked',
+                'today_status' => $attendance?->status ?? 'not_marked',
             ]
         ]);
     }
