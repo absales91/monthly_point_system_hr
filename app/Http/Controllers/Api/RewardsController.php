@@ -9,39 +9,53 @@ use Carbon\Carbon;
 
 class RewardsController extends Controller
 {
-    public function index(Request $request)
+      public function index(Request $request)
     {
-        $user = $request->user(); // employee
+        $user = $request->user();
 
-        // 🪙 TOTAL POINTS (wallet)
-        $totalPoints = DB::table('reward_wallets')
+        // 🪙 WALLET (TOTALS)
+        $wallet = DB::table('reward_wallets')
             ->where('employee_id', $user->id)
-            ->sum(DB::raw("
-                CASE 
-                    WHEN type = 'earned' THEN points 
-                    WHEN type = 'redeemed' THEN -points 
-                    ELSE 0 
-                END
-            "));
+            ->first();
 
-        // 📜 HISTORY
-        $history = DB::table('reward_wallets')
-            ->where('employee_id', $user->id)
-            ->orderBy('created_at', 'desc')
+        $availablePoints = $wallet->available_points ?? 0;
+        $lifetimePoints  = $wallet->lifetime_points ?? 0;
+
+        // 📜 REWARD HISTORY (employee_rewards)
+        $history = DB::table('employee_rewards as er')
+            ->leftJoin('reward_rules as rr', 'rr.id', '=', 'er.reward_rule_id')
+            ->where('er.employee_id', $user->id)
+            ->orderBy('er.year', 'desc')
+            ->orderBy('er.month', 'desc')
+            ->orderBy('er.created_at', 'desc')
             ->get()
             ->map(function ($row) {
+
+                // earned vs redeemed logic
+                $type = $row->points_used > 0 ? 'redeemed' : 'earned';
+
+                // display points
+                $points = $row->points_used > 0
+                    ? $row->points_used
+                    : $row->reward_value;
+
                 return [
-                    'title' => $row->title,
-                    'points' => (int) $row->points,
-                    'type' => $row->type, // earned | redeemed
-                    'date' => Carbon::parse($row->created_at)->format('d M Y'),
+                    'title' => $row->title ?? 'Reward',
+                    'points' => (int) $points,
+                    'type' => $type,
+                    'status' => $row->status, // pending / approved / used
+                    'month' => $row->month,
+                    'year' => $row->year,
+                    'date' => Carbon::create($row->year, $row->month, 1)
+                        ->format('M Y'),
                 ];
             });
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total_points' => max(0, $totalPoints),
+                'available_points' => $availablePoints,
+                'lifetime_points' => $lifetimePoints,
                 'history' => $history,
             ]
         ]);
