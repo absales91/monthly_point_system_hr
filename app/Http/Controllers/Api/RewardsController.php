@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
-class RewardController extends Controller
+class RewardsController extends Controller
 {
     public function index(Request $request)
     {

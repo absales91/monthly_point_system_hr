@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\DashboardController as Dashboard;
-use App\Http\Controllers\Api\RewardController;
+use App\Http\Controllers\Api\RewardsController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -16,5 +16,5 @@ Route::middleware('auth:sanctum')->group(function () {
     // attendance Summary
     Route::get('/attendance/summary', [AttendanceController::class, 'attendanceSummary']);
     // Rewards
-    Route::get('/rewards', [RewardController::class, 'index']);
+    Route::get('/rewards', [RewardsController::class, 'index']);
 });
