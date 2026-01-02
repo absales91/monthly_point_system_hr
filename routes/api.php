@@ -11,4 +11,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard', [Dashboard::class, 'index']);
     Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
     Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);
+    // attendance Summary
+    Route::get('/attendance/summary', [AttendanceController::class, 'attendanceSummary']);
 });
