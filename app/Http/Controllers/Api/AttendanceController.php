@@ -192,12 +192,13 @@ class AttendanceController extends Controller
                     'working_minutes' => (int) $row->working_minutes,
                     'status' => $row->status,
                     'check_in_image_url' => $row->check_in_image
-                        ? Storage::url($row->check_in_image)
+                        ? url($row->check_in_image)
                         : null,
 
                     'check_out_image_url' => $row->check_out_image
-                        ? Storage::url($row->check_out_image)
+                        ? url($row->check_out_image)
                         : null,
+
                 ];
             });
 
