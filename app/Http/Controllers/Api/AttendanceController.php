@@ -35,8 +35,22 @@ class AttendanceController extends Controller
         }
 
         // 📸 Store image
-        $imagePath = $request->file('image')
-            ->store('attendance', 'public');
+        $image = $request->file('image');
+
+        $filename = 'checkout_' . time() . '_' . $image->getClientOriginalName();
+
+        $destinationPath = public_path('storage/attendance');
+
+        // ensure folder exists
+        if (!file_exists($destinationPath)) {
+            mkdir($destinationPath, 0755, true);
+        }
+
+        $image->move($destinationPath, $filename);
+
+        // save this path in DB
+        $imagePath = 'storage/attendance/' . $filename;
+
 
         Attendance::create([
             'employee_id' => $employeeId,
@@ -55,88 +69,102 @@ class AttendanceController extends Controller
         ]);
     }
 
-   public function checkOut(Request $request)
-{
-    $request->validate([
-        'image' => 'required|image|mimes:jpg,jpeg,png|max:2048',
-        'latitude' => 'required',
-        'longitude' => 'required',
-    ]);
+    public function checkOut(Request $request)
+    {
+        $request->validate([
+            'image' => 'required|image|mimes:jpg,jpeg,png|max:2048',
+            'latitude' => 'required',
+            'longitude' => 'required',
+        ]);
 
-    $employee = $request->user();
+        $employee = $request->user();
 
-    // ✅ Current IST time
-    $now = Carbon::now('Asia/Kolkata');
-    $today = $now->toDateString();
+        // ✅ Current IST time
+        $now = Carbon::now('Asia/Kolkata');
+        $today = $now->toDateString();
 
-    $attendance = Attendance::where('employee_id', $employee->id)
-        ->whereDate('date', $today)
-        ->first();
+        $attendance = Attendance::where('employee_id', $employee->id)
+            ->whereDate('date', $today)
+            ->first();
 
-    if (!$attendance || !$attendance->check_in) {
+        if (!$attendance || !$attendance->check_in) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Check-in not found',
+            ], 400);
+        }
+
+        if ($attendance->check_out) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Already checked out',
+            ], 400);
+        }
+
+        // 🕒 SAFE CHECK-IN TIME (IST)
+        $checkIn = Carbon::parse(
+            $attendance->date . ' ' . $attendance->check_in,
+            'Asia/Kolkata'
+        );
+
+        // ❌ If somehow checkout before check-in
+        if ($now->lessThan($checkIn)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid checkout time',
+            ], 400);
+        }
+
+        // ✅ WORKING MINUTES
+        $minutes = $checkIn->diffInMinutes($now);
+
+        // 🟢 STATUS LOGIC
+        if ($minutes >= 480) {
+            $status = 'present';
+        } elseif ($minutes >= 240) {
+            $status = 'half_day';
+        } else {
+            $status = 'absent';
+        }
+
+        // 📸 STORE IMAGE
+        $image = $request->file('image');
+
+        $filename = 'checkout_' . time() . '_' . $image->getClientOriginalName();
+
+        $destinationPath = public_path('storage/attendance');
+
+        // ensure folder exists
+        if (!file_exists($destinationPath)) {
+            mkdir($destinationPath, 0755, true);
+        }
+
+        $image->move($destinationPath, $filename);
+
+        // save this path in DB
+        $checkOutImage = 'storage/attendance/' . $filename;
+
+
+        // ✅ UPDATE ATTENDANCE
+        $attendance->update([
+            'check_out' => $now->format('H:i:s'),
+            'check_out_image' => $checkOutImage,
+            'check_out_latitude' => $request->latitude,
+            'check_out_longitude' => $request->longitude,
+            'working_minutes' => $minutes,
+            'status' => $status,
+        ]);
+
         return response()->json([
-            'success' => false,
-            'message' => 'Check-in not found',
-        ], 400);
+            'success' => true,
+            'message' => 'Check-out successful',
+            'working_minutes' => $minutes,
+            'check_in_time' => $checkIn->format('H:i:s'),
+            'check_out_time' => $now->format('H:i:s'),
+            'status' => $status,
+            'timezone' => 'Asia/Kolkata',
+        ]);
     }
-
-    if ($attendance->check_out) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Already checked out',
-        ], 400);
-    }
-
-    // 🕒 SAFE CHECK-IN TIME (IST)
-    $checkIn = Carbon::parse(
-        $attendance->date . ' ' . $attendance->check_in,
-        'Asia/Kolkata'
-    );
-
-    // ❌ If somehow checkout before check-in
-    if ($now->lessThan($checkIn)) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Invalid checkout time',
-        ], 400);
-    }
-
-    // ✅ WORKING MINUTES
-    $minutes = $checkIn->diffInMinutes($now);
-
-    // 🟢 STATUS LOGIC
-    if ($minutes >= 480) {
-        $status = 'present';
-    } elseif ($minutes >= 240) {
-        $status = 'half_day';
-    } else {
-        $status = 'absent';
-    }
-
-    // 📸 STORE IMAGE
-    $checkOutImage = $request->file('image')
-        ->store('attendance', 'public');
-
-    // ✅ UPDATE ATTENDANCE
-    $attendance->update([
-        'check_out' => $now->format('H:i:s'),
-        'check_out_image' => $checkOutImage,
-        'check_out_latitude' => $request->latitude,
-        'check_out_longitude' => $request->longitude,
-        'working_minutes' => $minutes,
-        'status' => $status,
-    ]);
-
-    return response()->json([
-        'success' => true,
-        'message' => 'Check-out successful',
-        'working_minutes' => $minutes,
-        'check_in_time' => $checkIn->format('H:i:s'),
-        'check_out_time' => $now->format('H:i:s'),
-        'status' => $status,
-        'timezone' => 'Asia/Kolkata',
-    ]);
-}
 
 
 
@@ -163,13 +191,13 @@ class AttendanceController extends Controller
                     'check_out' => $row->check_out ?? '--',
                     'working_minutes' => (int) $row->working_minutes,
                     'status' => $row->status,
-                     'check_in_image_url' => $row->check_in_image
-                    ? Storage::url($row->check_in_image)
-                    : null,
+                    'check_in_image_url' => $row->check_in_image
+                        ? Storage::url($row->check_in_image)
+                        : null,
 
-                'check_out_image_url' => $row->check_out_image
-                    ? Storage::url($row->check_out_image)
-                    : null,
+                    'check_out_image_url' => $row->check_out_image
+                        ? Storage::url($row->check_out_image)
+                        : null,
                 ];
             });
 
