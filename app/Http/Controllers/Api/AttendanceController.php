@@ -45,25 +45,15 @@ class AttendanceController extends Controller
         // 📸 Store image
         $image = $request->file('image');
 
-// clean + unique filename
-$filename = $request->type . '_' . time() . '_' . uniqid() . '.' . $image->extension();
 
-// ✅ store in storage/app/public/attendance
-$path = $image->storeAs(
-    'attendance',   // folder
-    $filename,      // filename
-    'public'        // disk
-);
-
-// ✅ save PUBLIC path in DB
-$imagePath = 'storage/' . $path; 
-
+    $img = $request->file('image')
+        ->store('attendance', 'public');
         // 📝 Insert punch log
         DB::table('attendance_logs')->insert([
             'employee_id' => $employeeId,
             'date'        => $today,
             'punch_type'  => $request->type,
-            'image'       => $imagePath,
+            'image'       => $img,
             'latitude'    => $request->latitude,
             'longitude'   => $request->longitude,
             'created_at'  => $now,
