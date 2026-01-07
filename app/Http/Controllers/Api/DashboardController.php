@@ -12,63 +12,72 @@ use Illuminate\Support\Facades\DB;
 class DashboardController extends Controller
 {
     public function index(Request $request)
-    {
-        $user = $request->user(); // employee itself
+{
+    $user = $request->user();
 
-        $now = Carbon::now('Asia/Kolkata');
+    $now   = Carbon::now('Asia/Kolkata');
+    $month = $now->month;
+    $year  = $now->year;
+    $today = $now->toDateString();
 
-        $month = $now->month;
-        $year  = $now->year;
-        $today = $now->toDateString(); // Y-m-d
+    // 📊 Attendance counts (from attendances table)
+    $present = Attendance::where('employee_id', $user->id)
+        ->whereMonth('date', $month)
+        ->whereYear('date', $year)
+        ->where('status', 'present')
+        ->count();
 
-        $present = Attendance::where('employee_id', $user->id)
-            ->whereMonth('date', $month)
-            ->whereYear('date', $year)
-            ->where('status', 'present')
-            ->count();
+    $halfDay = Attendance::where('employee_id', $user->id)
+        ->whereMonth('date', $month)
+        ->whereYear('date', $year)
+        ->where('status', 'half_day')
+        ->count();
 
-        $halfDay = Attendance::where('employee_id', $user->id)
-            ->whereMonth('date', $month)
-            ->whereYear('date', $year)
-            ->where('status', 'half_day')
-            ->count();
+    $absent = Attendance::where('employee_id', $user->id)
+        ->whereMonth('date', $month)
+        ->whereYear('date', $year)
+        ->where('status', 'absent')
+        ->count();
 
-        $absent = Attendance::where('employee_id', $user->id)
-            ->whereMonth('date', $month)
-            ->whereYear('date', $year)
-            ->where('status', 'absent')
-            ->count();
+    // 💰 Salary calculation (policy-based)
+    $perDaySalary = (float) ($user->per_day_salary ?? 0);
 
-        // Salary calculation
-        $perDaySalary = (float) ($user->per_day_salary ?? 0);
+    $salary =
+        ($present * $perDaySalary) +
+        ($halfDay * ($perDaySalary / 2));
 
+    // 📌 Today status (from attendances)
+    $todayAttendance = Attendance::where('employee_id', $user->id)
+        ->whereDate('date', $today)
+        ->first();
 
-        $salary =
-            ($present * $perDaySalary) +
-            ($halfDay * ($perDaySalary / 2));
-        $attendance = Attendance::where('employee_id', $user->id)
-            ->whereDate('date', $today)
-            ->first();
-        $today = Carbon::now('Asia/Kolkata')->toDateString();
+    // 🔁 Last punch (from attendance_logs)
+    $lastPunch = DB::table('attendance_logs')
+        ->where('employee_id', $user->id)
+        ->where('date', $today)
+        ->orderByDesc('id')
+        ->value('punch_type');
 
-$lastPunch = DB::table('attendance_logs')
-    ->where('employee_id', $user->id)
-    ->where('date', $today)
-    ->orderByDesc('id')
-    ->value('punch_type');
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'name' => $user->name,
-                'present' => $present,
-                'half_day' => $halfDay,
-                'absent' => $absent,
-                'salary' => round($salary),
-                'checked_in' => $attendance && $attendance->check_in ? true : false,
-                'checked_out' => $attendance && $attendance->check_out ? true : false,
-                'today_status' => $attendance?->status ?? 'not_marked',
-                'last_punch' => $lastPunch ?? 'none',
-            ]
-        ]);
-    }
+    return response()->json([
+        'success' => true,
+        'data' => [
+            'name' => $user->name,
+
+            // Summary
+            'present' => $present,
+            'half_day' => $halfDay,
+            'absent' => $absent,
+
+            // Salary
+            'salary' => round($salary),
+
+            // Today
+            'today_status' => $todayAttendance?->status ?? 'not_marked',
+
+            // Punch control (IMPORTANT for Flutter)
+            'last_punch' => $lastPunch ?? 'none',
+        ],
+    ]);
+}
+
 }
