@@ -7,6 +7,7 @@ use App\Models\Attendance;
 use App\Models\Employee;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
@@ -48,7 +49,13 @@ class DashboardController extends Controller
         $attendance = Attendance::where('employee_id', $user->id)
             ->whereDate('date', $today)
             ->first();
+        $today = Carbon::now('Asia/Kolkata')->toDateString();
 
+$lastPunch = DB::table('attendance_logs')
+    ->where('employee_id', $user->id)
+    ->where('date', $today)
+    ->orderByDesc('id')
+    ->value('punch_type');
         return response()->json([
             'success' => true,
             'data' => [
@@ -60,6 +67,7 @@ class DashboardController extends Controller
                 'checked_in' => $attendance && $attendance->check_in ? true : false,
                 'checked_out' => $attendance && $attendance->check_out ? true : false,
                 'today_status' => $attendance?->status ?? 'not_marked',
+                'last_punch' => $lastPunch ?? 'none',
             ]
         ]);
     }
