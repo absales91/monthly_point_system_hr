@@ -24,7 +24,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('attendances', function (Blueprint $table) {
-            //
+            $table->dropColumn(['check_out_image', 'check_out_latitude', 'check_out_longitude']);
         });
     }
 };
