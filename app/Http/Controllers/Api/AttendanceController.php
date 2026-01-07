@@ -44,15 +44,26 @@ class AttendanceController extends Controller
 
         // 📸 Store image
         $image = $request->file('image');
-        $filename = $request->type . '_' . time() . '_' . $image->getClientOriginalName();
-        $path = $image->storeAs('attendance', $filename, 'public');
+
+// clean + unique filename
+$filename = $request->type . '_' . time() . '_' . uniqid() . '.' . $image->extension();
+
+// ✅ store in storage/app/public/attendance
+$path = $image->storeAs(
+    'attendance',   // folder
+    $filename,      // filename
+    'public'        // disk
+);
+
+// ✅ save PUBLIC path in DB
+$imagePath = 'storage/' . $path; 
 
         // 📝 Insert punch log
         DB::table('attendance_logs')->insert([
             'employee_id' => $employeeId,
             'date'        => $today,
             'punch_type'  => $request->type,
-            'image'       => 'storage/' . $path,
+            'image'       => $imagePath,
             'latitude'    => $request->latitude,
             'longitude'   => $request->longitude,
             'created_at'  => $now,
@@ -75,66 +86,66 @@ class AttendanceController extends Controller
     /**
      * ⏱ Calculate today's working minutes & status
      */
-   private function calculateTodayAttendance($employeeId)
-{
-    $today = Carbon::now('Asia/Kolkata')->toDateString();
+    private function calculateTodayAttendance($employeeId)
+    {
+        $today = Carbon::now('Asia/Kolkata')->toDateString();
 
-    // 🔹 Get user HR settings
-    $user = DB::table('users')->where('id', $employeeId)->first();
+        // 🔹 Get user HR settings
+        $user = DB::table('users')->where('id', $employeeId)->first();
 
-    // Office timings
-    $officeIn  = Carbon::parse($user->office_in_time);
-    $officeOut = Carbon::parse($user->office_out_time);
+        // Office timings
+        $officeIn  = Carbon::parse($user->office_in_time);
+        $officeOut = Carbon::parse($user->office_out_time);
 
-    // Full day & half day minutes
-    $fullDayMinutes = $officeIn->diffInMinutes($officeOut); // e.g. 540
-    $halfDayMinutes = ($user->half_day_hours ?? 4) * 60;    // e.g. 240
+        // Full day & half day minutes
+        $fullDayMinutes = $officeIn->diffInMinutes($officeOut); // e.g. 540
+        $halfDayMinutes = ($user->half_day_hours ?? 4) * 60;    // e.g. 240
 
-    // 🔹 Get today's punch logs
-    $logs = DB::table('attendance_logs')
-        ->where('employee_id', $employeeId)
-        ->where('date', $today)
-        ->orderBy('created_at')
-        ->get();
+        // 🔹 Get today's punch logs
+        $logs = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $today)
+            ->orderBy('created_at')
+            ->get();
 
-    $totalMinutes = 0;
+        $totalMinutes = 0;
 
-    // 🔁 Pair IN → OUT
-    for ($i = 0; $i < count($logs); $i++) {
-        if (
-            $logs[$i]->punch_type === 'in' &&
-            isset($logs[$i + 1]) &&
-            $logs[$i + 1]->punch_type === 'out'
-        ) {
-            $in  = Carbon::parse($logs[$i]->created_at);
-            $out = Carbon::parse($logs[$i + 1]->created_at);
-            $totalMinutes += $in->diffInMinutes($out);
+        // 🔁 Pair IN → OUT
+        for ($i = 0; $i < count($logs); $i++) {
+            if (
+                $logs[$i]->punch_type === 'in' &&
+                isset($logs[$i + 1]) &&
+                $logs[$i + 1]->punch_type === 'out'
+            ) {
+                $in  = Carbon::parse($logs[$i]->created_at);
+                $out = Carbon::parse($logs[$i + 1]->created_at);
+                $totalMinutes += $in->diffInMinutes($out);
+            }
         }
+
+        // 🟢 STATUS DECISION (HR POLICY)
+        if ($totalMinutes >= $fullDayMinutes) {
+            $status = 'present';
+        } elseif ($totalMinutes >= $halfDayMinutes) {
+            $status = 'half_day';
+        } else {
+            $status = 'absent';
+        }
+
+        // 📌 Save daily summary
+        Attendance::updateOrCreate(
+            [
+                'employee_id' => $employeeId,
+                'date'        => $today,
+            ],
+            [
+                'working_minutes' => $totalMinutes,
+                'status'          => $status,
+            ]
+        );
+
+        return $totalMinutes;
     }
-
-    // 🟢 STATUS DECISION (HR POLICY)
-    if ($totalMinutes >= $fullDayMinutes) {
-        $status = 'present';
-    } elseif ($totalMinutes >= $halfDayMinutes) {
-        $status = 'half_day';
-    } else {
-        $status = 'absent';
-    }
-
-    // 📌 Save daily summary
-    Attendance::updateOrCreate(
-        [
-            'employee_id' => $employeeId,
-            'date'        => $today,
-        ],
-        [
-            'working_minutes' => $totalMinutes,
-            'status'          => $status,
-        ]
-    );
-
-    return $totalMinutes;
-}
 
 
     /**
@@ -195,34 +206,34 @@ class AttendanceController extends Controller
     }
 
     public function punchesByDate(Request $request)
-{
-    $request->validate([
-        'date' => 'required|date',
-    ]);
+    {
+        $request->validate([
+            'date' => 'required|date',
+        ]);
 
-    $employeeId = $request->user()->id;
-    $date = $request->date;
+        $employeeId = $request->user()->id;
+        $date = $request->date;
 
-    $punches = DB::table('attendance_logs')
-        ->where('employee_id', $employeeId)
-        ->where('date', $date)
-        ->orderBy('created_at')
-        ->get()
-        ->map(function ($row) {
-            return [
-                'type' => $row->punch_type, // in / out
-                'time' => Carbon::parse($row->created_at)
-                    ->timezone('Asia/Kolkata')
-                    ->format('h:i A'),
-                'image' => url($row->image),
-            ];
-        });
+        $punches = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $date)
+            ->orderBy('created_at')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'type' => $row->punch_type, // in / out
+                    'time' => Carbon::parse($row->created_at)
+                        ->timezone('Asia/Kolkata')
+                        ->format('h:i A'),
+                    'image' => url($row->image),
+                ];
+            });
 
-    return response()->json([
-        'success' => true,
-        'date' => $date,
-        'total_punches' => $punches->count(),
-        'punches' => $punches,
-    ]);
-}
+        return response()->json([
+            'success' => true,
+            'date' => $date,
+            'total_punches' => $punches->count(),
+            'punches' => $punches,
+        ]);
+    }
 }
