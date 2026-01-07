@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request)
+   public function index(Request $request)
 {
     $user = $request->user();
 
@@ -20,7 +20,7 @@ class DashboardController extends Controller
     $year  = $now->year;
     $today = $now->toDateString();
 
-    // 📊 Attendance counts (from attendances table)
+    // 📊 Attendance counts (monthly)
     $present = Attendance::where('employee_id', $user->id)
         ->whereMonth('date', $month)
         ->whereYear('date', $year)
@@ -39,19 +39,27 @@ class DashboardController extends Controller
         ->where('status', 'absent')
         ->count();
 
-    // 💰 Salary calculation (policy-based)
-    $perDaySalary = (float) ($user->per_day_salary ?? 0);
+    // 💰 PER DAY SALARY (AUTO DERIVED)
+    $perDaySalary = $user->per_day_salary;
 
+    if (!$perDaySalary || $perDaySalary <= 0) {
+        $perDaySalary = round(
+            ($user->basic_salary ?? 0) / max($user->working_days, 1),
+            2
+        );
+    }
+
+    // 💵 Salary calculation (policy-based)
     $salary =
         ($present * $perDaySalary) +
         ($halfDay * ($perDaySalary / 2));
 
-    // 📌 Today status (from attendances)
+    // 📌 Today attendance status
     $todayAttendance = Attendance::where('employee_id', $user->id)
         ->whereDate('date', $today)
         ->first();
 
-    // 🔁 Last punch (from attendance_logs)
+    // 🔁 Last punch (controls punch button)
     $lastPunch = DB::table('attendance_logs')
         ->where('employee_id', $user->id)
         ->where('date', $today)
@@ -63,21 +71,23 @@ class DashboardController extends Controller
         'data' => [
             'name' => $user->name,
 
-            // Summary
+            // Monthly summary
             'present' => $present,
             'half_day' => $halfDay,
             'absent' => $absent,
 
             // Salary
-            'salary' => round($salary),
+            'salary' => round($salary, 2),
+            'per_day_salary' => $perDaySalary,
 
             // Today
             'today_status' => $todayAttendance?->status ?? 'not_marked',
 
-            // Punch control (IMPORTANT for Flutter)
+            // Punch system
             'last_punch' => $lastPunch ?? 'none',
         ],
     ]);
 }
+
 
 }

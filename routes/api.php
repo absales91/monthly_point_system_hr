@@ -14,6 +14,7 @@ Route::middleware('auth:sanctum')->group(function () {
    Route::post('/attendance/punch', [AttendanceController::class, 'punch']);
     Route::get('/attendance/summary', [AttendanceController::class, 'attendanceSummary']);
     Route::get('/attendance/last-punch', [AttendanceController::class, 'lastPunch']);
+      Route::get('/attendance/punches', [AttendanceController::class, 'punchesByDate']);
     // Rewards
     Route::get('/rewards', [RewardsController::class, 'index']);
 });
