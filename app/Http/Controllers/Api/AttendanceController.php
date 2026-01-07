@@ -7,214 +7,175 @@ use App\Models\Attendance;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 class AttendanceController extends Controller
 {
-    public function checkIn(Request $request)
+    /**
+     * 🔁 SINGLE PUNCH API (IN / OUT)
+     * Replaces checkIn & checkOut
+     */
+    public function punch(Request $request)
     {
         $request->validate([
-            'image' => 'required|image|mimes:jpg,jpeg,png|max:2048',
-            'latitude' => 'required',
+            'image'     => 'required|image|mimes:jpg,jpeg,png|max:2048',
+            'latitude'  => 'required',
             'longitude' => 'required',
+            'type'      => 'required|in:in,out',
         ]);
 
-        $employeeId = $request->user()->id; // users = employee
-        $now = Carbon::now('Asia/Kolkata');
-        $today = $now->toDateString();
+        $employeeId = $request->user()->id;
+        $now        = Carbon::now('Asia/Kolkata');
+        $today      = $now->toDateString();
 
-        // ❌ Already checked-in today
-        if (Attendance::where('employee_id', $employeeId)
+        // 🔍 Last punch today
+        $lastPunch = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
             ->where('date', $today)
-            ->exists()
-        ) {
+            ->orderByDesc('id')
+            ->first();
+
+        // ❌ Prevent double IN or OUT
+        if ($lastPunch && $lastPunch->punch_type === $request->type) {
             return response()->json([
                 'success' => false,
-                'message' => 'Already checked in today'
-            ], 409);
+                'message' => 'Invalid punch sequence',
+            ], 400);
         }
 
         // 📸 Store image
         $image = $request->file('image');
+        $filename = $request->type . '_' . time() . '_' . $image->getClientOriginalName();
+        $path = $image->storeAs('attendance', $filename, 'public');
 
-        $filename = 'checkout_' . time() . '_' . $image->getClientOriginalName();
-
-        $destinationPath = public_path('storage/attendance');
-
-        // ensure folder exists
-        if (!file_exists($destinationPath)) {
-            mkdir($destinationPath, 0755, true);
-        }
-
-        $image->move($destinationPath, $filename);
-
-        // save this path in DB
-        $imagePath = 'storage/attendance/' . $filename;
-
-
-        Attendance::create([
+        // 📝 Insert punch log
+        DB::table('attendance_logs')->insert([
             'employee_id' => $employeeId,
-            'date' => $today,
-            'check_in' => $now->format('H:i:s'),
-            'check_in_image' => $imagePath,
-            'latitude' => $request->latitude,
-            'longitude' => $request->longitude,
-            'status' => 'present',
-            'working_minutes' => 0,
+            'date'        => $today,
+            'punch_type'  => $request->type,
+            'image'       => 'storage/' . $path,
+            'latitude'    => $request->latitude,
+            'longitude'   => $request->longitude,
+            'created_at'  => $now,
+            'updated_at'  => $now,
         ]);
 
+        // 🔄 Recalculate attendance after OUT
+        if ($request->type === 'out') {
+            $this->calculateTodayAttendance($employeeId);
+        }
+
         return response()->json([
-            'success' => true,
-            'message' => 'Check-in successful'
+            'success'    => true,
+            'message'    => strtoupper($request->type) . ' punch successful',
+            'time'       => $now->format('H:i:s'),
+            'last_punch' => $request->type,
         ]);
     }
 
-    public function checkOut(Request $request)
+    /**
+     * ⏱ Calculate today's working minutes & status
+     */
+    private function calculateTodayAttendance($employeeId)
     {
-        $request->validate([
-            'image' => 'required|image|mimes:jpg,jpeg,png|max:2048',
-            'latitude' => 'required',
-            'longitude' => 'required',
-        ]);
+        $today = Carbon::now('Asia/Kolkata')->toDateString();
 
-        $employee = $request->user();
+        $logs = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $today)
+            ->orderBy('created_at')
+            ->get();
 
-        // ✅ Current IST time
-        $now = Carbon::now('Asia/Kolkata');
-        $today = $now->toDateString();
+        $totalMinutes = 0;
 
-        $attendance = Attendance::where('employee_id', $employee->id)
-            ->whereDate('date', $today)
-            ->first();
-
-        if (!$attendance || !$attendance->check_in) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Check-in not found',
-            ], 400);
+        for ($i = 0; $i < count($logs); $i++) {
+            if (
+                $logs[$i]->punch_type === 'in' &&
+                isset($logs[$i + 1]) &&
+                $logs[$i + 1]->punch_type === 'out'
+            ) {
+                $in  = Carbon::parse($logs[$i]->created_at);
+                $out = Carbon::parse($logs[$i + 1]->created_at);
+                $totalMinutes += $in->diffInMinutes($out);
+            }
         }
 
-        if ($attendance->check_out) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Already checked out',
-            ], 400);
-        }
-
-        // 🕒 SAFE CHECK-IN TIME (IST)
-        $checkIn = Carbon::parse(
-            $attendance->date . ' ' . $attendance->check_in,
-            'Asia/Kolkata'
-        );
-
-        // ❌ If somehow checkout before check-in
-        if ($now->lessThan($checkIn)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid checkout time',
-            ], 400);
-        }
-
-        // ✅ WORKING MINUTES
-        $minutes = $checkIn->diffInMinutes($now);
-
-        // 🟢 STATUS LOGIC
-        if ($minutes >= 480) {
+        // 🟢 Status logic
+        if ($totalMinutes >= 480) {
             $status = 'present';
-        } elseif ($minutes >= 240) {
+        } elseif ($totalMinutes >= 240) {
             $status = 'half_day';
         } else {
             $status = 'absent';
         }
 
-        // 📸 STORE IMAGE
-        $image = $request->file('image');
+        Attendance::updateOrCreate(
+            [
+                'employee_id' => $employeeId,
+                'date'        => $today,
+            ],
+            [
+                'working_minutes' => $totalMinutes,
+                'status'          => $status,
+            ]
+        );
 
-        $filename = 'checkout_' . time() . '_' . $image->getClientOriginalName();
-
-        $destinationPath = public_path('storage/attendance');
-
-        // ensure folder exists
-        if (!file_exists($destinationPath)) {
-            mkdir($destinationPath, 0755, true);
-        }
-
-        $image->move($destinationPath, $filename);
-
-        // save this path in DB
-        $checkOutImage = 'storage/attendance/' . $filename;
-
-
-        // ✅ UPDATE ATTENDANCE
-        $attendance->update([
-            'check_out' => $now->format('H:i:s'),
-            'check_out_image' => $checkOutImage,
-            'check_out_latitude' => $request->latitude,
-            'check_out_longitude' => $request->longitude,
-            'working_minutes' => $minutes,
-            'status' => $status,
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Check-out successful',
-            'working_minutes' => $minutes,
-            'check_in_time' => $checkIn->format('H:i:s'),
-            'check_out_time' => $now->format('H:i:s'),
-            'status' => $status,
-            'timezone' => 'Asia/Kolkata',
-        ]);
+        return $totalMinutes;
     }
 
-
-
+    /**
+     * 📊 Monthly Attendance Summary
+     */
     public function attendanceSummary(Request $request)
     {
-        $userId = $request->user()->id;
-
-        // month format: YYYY-MM (2025-12)
+        $employeeId = $request->user()->id;
         $month = $request->get('month', now()->format('Y-m'));
 
         $startDate = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $endDate   = Carbon::createFromFormat('Y-m', $month)->endOfMonth();
 
-        // 📌 Attendance Records
-        $records = DB::table('attendances')
-            ->where('employee_id', $userId)
+        $records = Attendance::where('employee_id', $employeeId)
             ->whereBetween('date', [$startDate, $endDate])
             ->orderBy('date', 'desc')
             ->get()
             ->map(function ($row) {
                 return [
                     'date' => Carbon::parse($row->date)->format('d M Y'),
-                    'check_in' => $row->check_in ?? '--',
-                    'check_out' => $row->check_out ?? '--',
                     'working_minutes' => (int) $row->working_minutes,
                     'status' => $row->status,
-                    'check_in_image_url' => $row->check_in_image
-                        ? url($row->check_in_image)
-                        : null,
-
-                    'check_out_image_url' => $row->check_out_image
-                        ? url($row->check_out_image)
-                        : null,
-
                 ];
             });
 
-        // 📊 Summary
         $summary = [
             'month' => $startDate->format('F Y'),
             'present' => $records->where('status', 'present')->count(),
             'half_day' => $records->where('status', 'half_day')->count(),
             'absent' => $records->where('status', 'absent')->count(),
-            'leave' => $records->where('status', 'leave')->count(),
             'total_working_minutes' => $records->sum('working_minutes'),
         ];
 
         return response()->json([
+            'success' => true,
             'summary' => $summary,
             'records' => $records,
+        ]);
+    }
+
+    /**
+     * 🔄 Get last punch (for Flutter button state)
+     */
+    public function lastPunch(Request $request)
+    {
+        $employeeId = $request->user()->id;
+        $today = Carbon::now('Asia/Kolkata')->toDateString();
+
+        $lastPunch = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $today)
+            ->orderByDesc('id')
+            ->value('punch_type');
+
+        return response()->json([
+            'last_punch' => $lastPunch ?? 'none',
         ]);
     }
 }

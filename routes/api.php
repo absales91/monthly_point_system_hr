@@ -11,10 +11,9 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard', [Dashboard::class, 'index']);
-    Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
-    Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);
-    // attendance Summary
+   Route::post('/attendance/punch', [AttendanceController::class, 'punch']);
     Route::get('/attendance/summary', [AttendanceController::class, 'attendanceSummary']);
+    Route::get('/attendance/last-punch', [AttendanceController::class, 'lastPunch']);
     // Rewards
     Route::get('/rewards', [RewardsController::class, 'index']);
 });
