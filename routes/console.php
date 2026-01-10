@@ -12,9 +12,15 @@ Artisan::command('inspire', function () {
 app()->booted(function () {
     $schedule = app(Schedule::class);
 
+    $schedule->command('attendance:auto-out')
+        ->dailyAt('23:59')
+        ->timezone('Asia/Kolkata');
+        
     $schedule->command('attendance:mark-absent')
         ->dailyAt('23:59')
         ->timezone('Asia/Kolkata')
         ->withoutOverlapping()
         ->onOneServer();
+
+     
 });

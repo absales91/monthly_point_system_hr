@@ -40,7 +40,7 @@ class MarkAbsentCron extends Command
              */
             $attendanceExists = DB::table('attendances')
                 ->where('employee_id', $employee->id)
-                ->whereDate('date', $today)
+                ->where('date', $today)
                 ->exists();
 
             if ($attendanceExists) {
@@ -50,7 +50,7 @@ class MarkAbsentCron extends Command
             /**
              * STEP 3: Mark ABSENT in attendances table
              */
-            DB::table('attendances')->insert([
+            DB::table('attendances')->updateOrInsert([
                 'employee_id'     => $employee->id,
                 'date'            => $today,
                 'working_minutes' => 0,
