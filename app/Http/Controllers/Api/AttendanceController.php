@@ -14,7 +14,7 @@ class AttendanceController extends Controller
      * 🔁 SINGLE PUNCH API (IN / OUT)
      * Replaces checkIn & checkOut
      */
-    public function punch(Request $request)
+      public function punch(Request $request)
     {
         $request->validate([
             'image'     => 'required|image|mimes:jpg,jpeg,png|max:2048',
@@ -34,7 +34,14 @@ class AttendanceController extends Controller
             ->orderByDesc('id')
             ->first();
 
-        // ❌ Prevent double IN or OUT
+        // ❌ Prevent invalid sequences
+        if (!$lastPunch && $request->type === 'out') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Punch IN required first',
+            ], 400);
+        }
+
         if ($lastPunch && $lastPunch->punch_type === $request->type) {
             return response()->json([
                 'success' => false,
@@ -44,22 +51,15 @@ class AttendanceController extends Controller
 
         // 📸 Store image
         $image = $request->file('image');
+        $filename = uniqid() . '_' . $image->getClientOriginalName();
+        $destination = public_path('attendance');
 
+        if (!is_dir($destination)) {
+            mkdir($destination, 0755, true);
+        }
 
-    $image = $request->file('image');
-
-$filename = uniqid().'_'.$image->getClientOriginalName();
-
-$destination = public_path('attendance');
-
-if (!is_dir($destination)) {
-    mkdir($destination, 0755, true);
-}
-
-$image->move($destination, $filename);
-
-// Save in DB
-$imagePath = 'attendance/' . $filename;
+        $image->move($destination, $filename);
+        $imagePath = 'attendance/' . $filename;
 
         // 📝 Insert punch log
         DB::table('attendance_logs')->insert([
@@ -73,7 +73,7 @@ $imagePath = 'attendance/' . $filename;
             'updated_at'  => $now,
         ]);
 
-        // 🔄 Recalculate attendance after OUT
+        // 🔄 Recalculate attendance on OUT
         if ($request->type === 'out') {
             $this->calculateTodayAttendance($employeeId);
         }
@@ -93,54 +93,96 @@ $imagePath = 'attendance/' . $filename;
     {
         $today = Carbon::now('Asia/Kolkata')->toDateString();
 
-        // 🔹 Get user HR settings
+        // 🔹 User HR settings
         $user = DB::table('users')->where('id', $employeeId)->first();
 
-        // Office timings
-        $officeIn  = Carbon::parse($user->office_in_time);
-        $officeOut = Carbon::parse($user->office_out_time);
+        // 🔹 Approved leave check
+        // $onLeave = DB::table('employee_leaves')
+        //     ->where('employee_id', $employeeId)
+        //     ->where('date', $today)
+        //     ->where('status', 'approved')
+        //     ->exists();
 
-        // Full day & half day minutes
-        $fullDayMinutes = $officeIn->diffInMinutes($officeOut); // e.g. 540
-        $halfDayMinutes = ($user->half_day_hours ?? 4) * 60;    // e.g. 240
+        // if ($onLeave) {
+        //     Attendance::updateOrCreate(
+        //         ['employee_id' => $employeeId, 'date' => $today],
+        //         ['working_minutes' => 0, 'status' => 'leave']
+        //     );
+        //     return 0;
+        // }
 
-        // 🔹 Get today's punch logs
+        // 🔹 Office timings
+        $officeIn  = Carbon::parse($today . ' ' . $user->office_in_time);
+        $officeOut = Carbon::parse($today . ' ' . $user->office_out_time);
+
+        $fullDayMinutes = $officeIn->diffInMinutes($officeOut);
+        $halfDayMinutes = ($user->half_day_hours ?? 4) * 60;
+
+        // 🔹 Punch logs
         $logs = DB::table('attendance_logs')
             ->where('employee_id', $employeeId)
             ->where('date', $today)
             ->orderBy('created_at')
             ->get();
 
+        if ($logs->isEmpty()) {
+            Attendance::updateOrCreate(
+                ['employee_id' => $employeeId, 'date' => $today],
+                ['working_minutes' => 0, 'status' => 'absent']
+            );
+            return 0;
+        }
+
+        // 🔹 First IN punch (safe late check)
+        $firstInLog = $logs->firstWhere('punch_type', 'in');
+
+        if (!$firstInLog) {
+            Attendance::updateOrCreate(
+                ['employee_id' => $employeeId, 'date' => $today],
+                ['working_minutes' => 0, 'status' => 'absent']
+            );
+            return 0;
+        }
+
+        // 🔁 Calculate working minutes (handles missing OUT)
         $totalMinutes = 0;
 
-        // 🔁 Pair IN → OUT
         for ($i = 0; $i < count($logs); $i++) {
-            if (
-                $logs[$i]->punch_type === 'in' &&
-                isset($logs[$i + 1]) &&
-                $logs[$i + 1]->punch_type === 'out'
-            ) {
-                $in  = Carbon::parse($logs[$i]->created_at);
-                $out = Carbon::parse($logs[$i + 1]->created_at);
-                $totalMinutes += $in->diffInMinutes($out);
+            if ($logs[$i]->punch_type === 'in') {
+
+                $in = Carbon::parse($logs[$i]->created_at);
+
+                if (isset($logs[$i + 1]) && $logs[$i + 1]->punch_type === 'out') {
+                    $out = Carbon::parse($logs[$i + 1]->created_at);
+                    $i++; // skip next
+                } else {
+                    // Missing OUT → assume office out
+                    $out = $officeOut;
+                }
+
+                if ($out->greaterThan($in)) {
+                    $totalMinutes += $in->diffInMinutes($out);
+                }
             }
         }
 
-        // 🟢 STATUS DECISION (HR POLICY)
+        // 🔹 Late calculation
+        $firstIn = Carbon::parse($firstInLog->created_at);
+        $lateGrace = $user->late_minutes_allowed ?? 15;
+        $lateCutoff = $officeIn->copy()->addMinutes($lateGrace);
+        $isLate = $firstIn->greaterThan($lateCutoff);
+
+        // 🔹 Final status
         if ($totalMinutes >= $fullDayMinutes) {
-            $status = 'present';
+            $status = $isLate ? 'late' : 'present';
         } elseif ($totalMinutes >= $halfDayMinutes) {
             $status = 'half_day';
         } else {
             $status = 'absent';
         }
 
-        // 📌 Save daily summary
         Attendance::updateOrCreate(
-            [
-                'employee_id' => $employeeId,
-                'date'        => $today,
-            ],
+            ['employee_id' => $employeeId, 'date' => $today],
             [
                 'working_minutes' => $totalMinutes,
                 'status'          => $status,
@@ -149,6 +191,7 @@ $imagePath = 'attendance/' . $filename;
 
         return $totalMinutes;
     }
+
 
 
     /**

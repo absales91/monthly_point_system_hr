@@ -8,57 +8,58 @@ use Illuminate\Support\Facades\DB;
 
 class MarkAbsentCron extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
     protected $signature = 'app:mark-absent-cron';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Command description';
+    protected $description = 'Mark absent for employees who did not punch today';
 
-    /**
-     * Execute the console command.
-     */
     public function handle()
     {
         $today = Carbon::now('Asia/Kolkata')->toDateString();
 
         // 🔹 Get all active employees
-        $employees = DB::table('employees')
-            ->where('status', 'active') // if you have status column
+        $employees = DB::table('users')
+           ->where('role', 'employee')
             ->get();
 
         foreach ($employees as $employee) {
 
-            // ❌ Already has attendance?
-            $exists = DB::table('attendances')
+            /**
+             * STEP 1: Check if employee has ANY punch today
+             */
+            $hasPunch = DB::table('attendance_logs')
                 ->where('employee_id', $employee->id)
                 ->whereDate('date', $today)
                 ->exists();
 
-            if ($exists) {
+            if ($hasPunch) {
+                continue; // present or half-day will be handled separately
+            }
+
+            /**
+             * STEP 2: Check if attendance already marked
+             */
+            $attendanceExists = DB::table('attendances')
+                ->where('employee_id', $employee->id)
+                ->whereDate('date', $today)
+                ->exists();
+
+            if ($attendanceExists) {
                 continue;
             }
 
-            // ✅ INSERT ABSENT ENTRY
+            /**
+             * STEP 3: Mark ABSENT in attendances table
+             */
             DB::table('attendances')->insert([
-                'employee_id' => $employee->id,
-                'date' => $today,
-                'check_in' => null,
-                'check_out' => null,
+                'employee_id'     => $employee->id,
+                'date'            => $today,
                 'working_minutes' => 0,
-                'status' => 'absent',
-                'created_at' => now(),
-                'updated_at' => now(),
+                'status'          => 'absent',
+                'created_at'      => now(),
+                'updated_at'      => now(),
             ]);
         }
 
-        $this->info("Absent marked for date: $today");
+        $this->info("Absent marked successfully for date: {$today}");
     }
 }
