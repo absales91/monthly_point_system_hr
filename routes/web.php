@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminTaskController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
@@ -67,6 +68,15 @@ Route::middleware(['auth','role:admin'])->group(function () {
 
     Route::post('/reward-rules', [RewardRuleController::class, 'store'])
         ->name('reward-rules.store');
+
+    Route::get('/tasks', [AdminTaskController::class, 'index'])
+        ->name('admin.tasks.index');
+
+    Route::get('/tasks/create', [AdminTaskController::class, 'create'])
+        ->name('admin.tasks.create');
+
+    Route::post('/tasks', [AdminTaskController::class, 'store'])
+        ->name('admin.tasks.store');
 
 });
 
