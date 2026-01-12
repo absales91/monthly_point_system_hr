@@ -15,7 +15,7 @@ class NotificationService
     }
 
     public static function send(
-        $employee,
+        $user,
         string $title,
         string $body,
         string $type,
@@ -23,7 +23,7 @@ class NotificationService
     ) {
         // 1️⃣ Save notification in DB (in-app history)
         Notification::create([
-            'employee_id' => $employee->id,
+            'employee_id' => $user->id,   // 🔥 FIXED
             'title' => $title,
             'body' => $body,
             'type' => $type,
@@ -32,10 +32,10 @@ class NotificationService
         ]);
 
         // 2️⃣ Send FCM push notification
-        if (!empty($employee->fcm_token)) {
+        if (!empty($user->fcm_token)) {
 
             $message = [
-                'token' => $employee->fcm_token,
+                'token' => $user->fcm_token,
                 'notification' => [
                     'title' => $title,
                     'body' => $body,
