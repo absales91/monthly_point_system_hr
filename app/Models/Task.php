@@ -28,12 +28,21 @@ class Task extends Model
         return $this->belongsTo(User::class, 'assigned_to');
     }
 
-    // Admin / Manager who assigned the task
+    /**
+     * Admin who assigned the task
+     */
     public function assignedBy()
     {
         return $this->belongsTo(User::class, 'assigned_by');
     }
 
+    /**
+     * Employee to whom task is assigned
+     */
+    public function assignedTo()
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
+    }
     // Task updates / logs
     public function logs()
     {
