@@ -19,6 +19,13 @@ class AdminTaskController extends Controller
         return view('admin.tasks.index', compact('tasks'));
     }
 
+    public function create()
+    {
+        $employees = User::where('role', 'employee')->orderBy('name')->get();
+
+        return view('admin.tasks.create', compact('employees'));
+    }
+
    public function store(Request $request)
 {
     $request->validate([
@@ -28,23 +35,23 @@ class AdminTaskController extends Controller
         'due_date' => 'nullable|date',
     ]);
 
-    // ✅ Get employee
+    // ✅ Get employee user
     $employee = User::where('role', 'employee')
         ->where('id', $request->assigned_to)
         ->firstOrFail();
 
-    // ✅ Create task (SAVE TO VARIABLE)
+    // ✅ Create task and STORE IT
     $task = Task::create([
         'title' => $request->title,
         'description' => $request->description,
-        'assigned_by' => auth()->id(),   // 🔥 FIXED
+        'assigned_by' => auth()->id(),        // 🔥 FIXED
         'assigned_to' => $employee->id,
         'priority' => $request->priority,
         'due_date' => $request->due_date,
         'status' => 'pending',
     ]);
 
-    // ✅ Send notification
+    // ✅ Send notification AFTER task is created
     NotificationService::send(
         $employee,
         'New Task Assigned',
