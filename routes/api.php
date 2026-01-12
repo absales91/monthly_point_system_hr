@@ -36,7 +36,7 @@ Route::middleware('auth:sanctum')->group(function () {
     return response()->json([
         'status' => 'ok'
     ]);
-    Route::get('/mytask',[TaskController::class,'mytask']);
+   
 });
-
+ Route::get('/mytask',[TaskController::class,'mytask']);
 });
