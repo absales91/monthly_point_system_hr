@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Task;
 use App\Models\Employee;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class AdminTaskController extends Controller
@@ -18,37 +19,32 @@ class AdminTaskController extends Controller
         return view('admin.tasks.index', compact('tasks'));
     }
 
-    public function create()
-    {
-        $employees = User::where('role', 'employee')->orderBy('name')->get();
+   public function store(Request $request)
+{
+    $request->validate([
+        'title' => 'required|string|max:255',
+        'assigned_to' => 'required|exists:users,id',
+        'priority' => 'required|in:low,medium,high',
+        'due_date' => 'nullable|date',
+    ]);
 
-        return view('admin.tasks.create', compact('employees'));
-    }
+    // ✅ Get employee
+    $employee = User::where('role', 'employee')
+        ->where('id', $request->assigned_to)
+        ->firstOrFail();
 
-    public function store(Request $request)
-    {
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'assigned_to' => 'required|exists:users,id',
+    // ✅ Create task (SAVE TO VARIABLE)
+    $task = Task::create([
+        'title' => $request->title,
+        'description' => $request->description,
+        'assigned_by' => auth()->id(),   // 🔥 FIXED
+        'assigned_to' => $employee->id,
+        'priority' => $request->priority,
+        'due_date' => $request->due_date,
+        'status' => 'pending',
+    ]);
 
-            'priority' => 'required|in:low,medium,high',
-            'due_date' => 'nullable|date',
-        ]);
-$employee = User::where('role', 'employee')
-            ->where('id', $request->assigned_to)
-            ->first();
-
-
-        Task::create([
-            'title' => $request->title,
-            'description' => $request->description,
-            'assigned_by' => $employee,
-            'assigned_to' => $request->assigned_to,
-            'priority' => $request->priority,
-            'due_date' => $request->due_date,
-            'status' => 'pending',
-        ]);
-        if ($employee) {
+    // ✅ Send notification
     NotificationService::send(
         $employee,
         'New Task Assigned',
@@ -57,10 +53,9 @@ $employee = User::where('role', 'employee')
         $task->id
     );
 
-
-        return redirect()
-            ->route('admin.tasks.index')
-            ->with('success', 'Task created successfully');
-    }
+    return redirect()
+        ->route('admin.tasks.index')
+        ->with('success', 'Task created successfully');
 }
+
 }
