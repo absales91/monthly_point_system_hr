@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\DailyReportController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\DashboardController as Dashboard;
 use App\Http\Controllers\Api\RewardsController;
+use App\Http\Controllers\Api\TaskController;
 use Illuminate\Http\Request;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -35,6 +36,7 @@ Route::middleware('auth:sanctum')->group(function () {
     return response()->json([
         'status' => 'ok'
     ]);
+    Route::get('/mytask',[TaskController::class,'mytask']);
 });
 
 });
