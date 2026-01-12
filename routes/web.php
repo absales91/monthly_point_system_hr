@@ -94,6 +94,9 @@ Route::middleware(['auth','role:employee,manager'])->group(function(){
 
       Route::get('/my-attendance',[AttendanceController::class,'myAttendance'])
         ->name('attendance.my');
+    Route::get('/attendance/{date}', 
+    [AttendanceController::class, 'show']
+)->name('employee.attendance.show');
 
     Route::post('/attendance/check-in',[AttendanceController::class,'checkIn'])
         ->name('attendance.checkin');

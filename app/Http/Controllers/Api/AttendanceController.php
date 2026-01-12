@@ -272,6 +272,8 @@ class AttendanceController extends Controller
                         ->timezone('Asia/Kolkata')
                         ->format('h:i A'),
                     'image' => url($row->image),
+                    'latitude' => $row->latitude,
+                    'longitude' => $row->longitude,
                 ];
             });
 

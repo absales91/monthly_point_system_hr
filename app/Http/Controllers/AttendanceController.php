@@ -6,6 +6,7 @@ use App\Models\Attendance;
 use App\Models\Employee;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class AttendanceController extends Controller
 {
@@ -53,11 +54,31 @@ class AttendanceController extends Controller
     public function myAttendance()
     {
         $records = Attendance::with('employee')
-            ->where('employee_id', auth()->user()->employee->id)
+            ->where('employee_id', auth()->user()->id)
             ->orderByDesc('date')
             ->get();
 
         return view('attendance.employee.my', compact('records'));
+    }
+
+    public function show($date)
+    {
+        $employeeId = auth()->user()->id;
+
+        $attendance = Attendance::where('employee_id', $employeeId)
+            ->where('date', $date)
+            ->first();
+
+        if (!$attendance) {
+            return redirect()->back()->with('error', 'No attendance record found for the selected date.');
+        }
+        $logs = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $date)
+            ->orderBy('created_at')
+            ->get();
+
+        return view('attendance.employee.show', compact('attendance', 'date','logs'));
     }
 
     public function checkIn()

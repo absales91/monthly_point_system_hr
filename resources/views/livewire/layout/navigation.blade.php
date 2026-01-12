@@ -38,6 +38,11 @@ new class extends Component
                         {{ __('Attendance') }}
                     </x-nav-link>
                     @endif
+                     @if(auth()->user()->role === 'employee' || auth()->user()->role === 'manager')
+                     <x-nav-link :href="route('attendance.my')" :active="request()->routeIs('attendance.my')" wire:navigate>
+                        {{ __('Attendance') }}
+                    </x-nav-link>
+                    @endif
                 </div>
             </div>
 
