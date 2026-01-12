@@ -24,11 +24,17 @@ Route::middleware('auth:sanctum')->group(function () {
     // Rewards
     Route::get('/rewards', [RewardsController::class, 'index']);
     Route::post('/save-fcm-token', function (Request $request) {
-    auth()->user()->update([
-        'fcm_token' => $request->fcm_token
+    $request->validate([
+        'fcm_token' => 'nullable|string',
     ]);
 
-    return response()->json(['status' => 'ok']);
+    $request->user()->update([
+        'fcm_token' => $request->fcm_token,
+    ]);
+
+    return response()->json([
+        'status' => 'ok'
+    ]);
 });
 
 });
