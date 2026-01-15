@@ -8,18 +8,26 @@ use Illuminate\Http\Request;
 
 class TaskController extends Controller
 {
-    public function mytask()
-    {
-        $tasks = Task::where('assigned_to', auth()->id())
-            ->with('assignedBy', 'assignedTo')
-            ->latest()
-            ->get();
+  public function mytask()
+{
+    $tasks = Task::where('assigned_to', auth()->id())
+        ->with([
+            'assignedBy:id,name',
+            'assignedTo:id,name',
+            'logs' => function ($q) {
+                $q->with('employee:id,name')
+                  ->latest();
+            }
+        ])
+        ->latest()
+        ->get();
 
-        return response()->json([
-            'status' => 'ok',
-            'tasks' => $tasks,
-        ]);
-    }
+    return response()->json([
+        'status' => 'ok',
+        'tasks' => $tasks,
+    ]);
+}
+
 
 
     public function saveTaskLog(Request $request)
