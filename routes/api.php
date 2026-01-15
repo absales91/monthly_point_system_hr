@@ -39,4 +39,6 @@ Route::middleware('auth:sanctum')->group(function () {
    
 });
  Route::get('/mytask',[TaskController::class,'mytask']);
+ // save task log
+    Route::post('/task-logs-save',[TaskController::class,'saveTaskLog']);
 });
