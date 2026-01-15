@@ -22,6 +22,7 @@ class TaskController extends Controller
             ])
             ->latest()
             ->get();
+        
 
         return response()->json([
             'status' => 'ok',
@@ -39,7 +40,18 @@ class TaskController extends Controller
             'image' => 'nullable|image|max:2048',
         ]);
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('task_logs', 'public');
+         $image = $request->file('image');
+$filename = uniqid() . '_' . $image->getClientOriginalName();
+$destination = public_path('task_logs');
+
+if (!is_dir($destination)) {
+    mkdir($destination, 0755, true);
+}
+
+$image->move($destination, $filename);
+
+$path = 'task_logs/' . $filename;
+
         }
 
 
