@@ -9,26 +9,34 @@ use Illuminate\Http\Request;
 
 class TaskController extends Controller
 {
-    public function mytask()
-    {
-        $tasks = Task::where('assigned_to', auth()->id())
-            ->with([
-                'assignedBy:id,name',
-                'assignedTo:id,name',
-                'logs' => function ($q) {
-                    $q->with('employee:id,name')
-                        ->latest();
-                }
-            ])
-            ->latest()
-            ->get();
-        
+ public function mytask()
+{
+    $tasks = Task::where('assigned_to', auth()->id())
+        ->with([
+            'assignedBy:id,name',
+            'assignedTo:id,name',
+            'logs' => function ($q) {
+                $q->with('employee:id,name')
+                  ->latest();
+            }
+        ])
+        ->latest()
+        ->get();
 
-        return response()->json([
-            'status' => 'ok',
-            'tasks' => $tasks,
-        ]);
-    }
+    // ✅ append image_url for each log
+    $tasks->each(function ($task) {
+        $task->logs->each(function ($log) {
+            $log->image_url = $log->image
+                ? asset($log->image)
+                : null;
+        });
+    });
+
+    return response()->json([
+        'status' => 'ok',
+        'tasks' => $tasks,
+    ]);
+}
 
 
 
@@ -40,18 +48,17 @@ class TaskController extends Controller
             'image' => 'nullable|image|max:2048',
         ]);
         if ($request->hasFile('image')) {
-         $image = $request->file('image');
-$filename = uniqid() . '_' . $image->getClientOriginalName();
-$destination = public_path('task_logs');
+            $image = $request->file('image');
+            $filename = uniqid() . '_' . $image->getClientOriginalName();
+            $destination = public_path('task_logs');
 
-if (!is_dir($destination)) {
-    mkdir($destination, 0755, true);
-}
+            if (!is_dir($destination)) {
+                mkdir($destination, 0755, true);
+            }
 
-$image->move($destination, $filename);
+            $image->move($destination, $filename);
 
-$path = 'task_logs/' . $filename;
-
+            $path = 'task_logs/' . $filename;
         }
 
 
