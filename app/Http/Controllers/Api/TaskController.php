@@ -26,7 +26,7 @@ class TaskController extends Controller
     // ✅ append image_url for each log
     $tasks->each(function ($task) {
         $task->logs->each(function ($log) {
-            $log->image_url = $log->image
+            $log->image = $log->image
                 ? asset($log->image)
                 : null;
         });
