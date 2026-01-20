@@ -13,7 +13,7 @@ class AutoOutPunchCron extends Command
      *
      * @var string
      */
-    protected $signature = 'app:auto-out-punch-cron';
+    protected $signature = 'attendance:auto-out';
 
     /**
      * The console command description.

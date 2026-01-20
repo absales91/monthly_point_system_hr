@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 class MarkAbsentCron extends Command
 {
-    protected $signature = 'app:mark-absent-cron';
+    protected $signature = 'attendance:mark-absent';
 
     protected $description = 'Mark absent for employees who did not punch today';
 
