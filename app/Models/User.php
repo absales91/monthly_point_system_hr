@@ -34,6 +34,7 @@ class User extends Authenticatable
     'office_out_time',
     'late_minutes_allowed',
     'half_day_hours',
+    'fcm_token',
     ];
 
     /**

@@ -49,7 +49,7 @@
 
         {{-- My Report --}}
         <div class="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-2xl shadow-lg p-6">
-            <h4 class="text-lg font-semibold">My Monthly Reports</h4>sd
+            <h4 class="text-lg font-semibold">My Monthly Reports</h4>
             <p class="text-sm opacity-90 mt-1">
                 View your performance and ratings
             </p>

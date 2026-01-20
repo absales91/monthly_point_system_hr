@@ -30,7 +30,15 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            //
+            $table->dropColumn([
+                'basic_salary',
+                'working_days',
+                'per_day_salary',
+                'office_in_time',
+                'office_out_time',
+                'late_minutes_allowed',
+                'half_day_hours',
+            ]);
         });
     }
 };
