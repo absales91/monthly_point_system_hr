@@ -43,16 +43,16 @@ Route::middleware('auth:sanctum')->group(function () {
  // save task log
     Route::post('/task-logs-save',[TaskController::class,'saveTaskLog']);
 
-    Route::prefix('leads')->group(function () {
+
 
     // Get leads list
-    Route::get('/', [LeadController::class, 'index']);
+    Route::get('/leads', [LeadController::class, 'index']);
 
     // Get single lead
-    Route::get('{id}', [LeadController::class, 'show']);
+    Route::get('/leads/{id}', [LeadController::class, 'show']);
 
     // Update lead status
-    Route::post('{id}/status', [LeadController::class, 'updateStatus']);
+    Route::post('/leads/{id}/status', [LeadController::class, 'updateStatus']);
 
-});
+
 });
