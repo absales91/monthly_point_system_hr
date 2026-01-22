@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DailyReportController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\DashboardController as Dashboard;
+use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\RewardsController;
 use App\Http\Controllers\Api\TaskController;
 use Illuminate\Http\Request;
@@ -36,9 +37,22 @@ Route::middleware('auth:sanctum')->group(function () {
     return response()->json([
         'status' => 'ok'
     ]);
-   
+
 });
  Route::get('/mytask',[TaskController::class,'mytask']);
  // save task log
     Route::post('/task-logs-save',[TaskController::class,'saveTaskLog']);
+
+    Route::prefix('leads')->group(function () {
+
+    // Get leads list
+    Route::get('/', [LeadController::class, 'index']);
+
+    // Get single lead
+    Route::get('{id}', [LeadController::class, 'show']);
+
+    // Update lead status
+    Route::post('{id}/status', [LeadController::class, 'updateStatus']);
+
+});
 });

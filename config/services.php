@@ -34,5 +34,10 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'indiamart' => [
+    'url' => 'https://mapi.indiamart.com/wservce/crm/crmListing/v2/',
+    'key' => env('INDIAMART_CRM_KEY'),
+    ],
+
 
 ];
