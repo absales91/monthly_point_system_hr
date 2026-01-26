@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminTaskController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
@@ -23,7 +24,7 @@ Route::view('profile', 'profile')
 
 Route::middleware(['auth','role:admin,manager'])->group(function(){
 
-    Route::get('/attendance',[AttendanceController::class,'index'])
+    Route::get('/manage-attendance',[AttendanceController::class,'index'])
         ->name('attendance.index');
 
     Route::post('/attendance/store',[AttendanceController::class,'store'])
@@ -68,6 +69,22 @@ Route::middleware(['auth','role:admin'])->group(function () {
     Route::post('/reward-rules', [RewardRuleController::class, 'store'])
         ->name('reward-rules.store');
 
+    Route::get('/tasks', [AdminTaskController::class, 'index'])
+        ->name('admin.tasks.index');
+
+    Route::get('/tasks/create', [AdminTaskController::class, 'create'])
+        ->name('admin.tasks.create');
+
+    Route::get('/tasks/{task}', [AdminTaskController::class, 'show'])
+        ->name('admin.tasks.show');
+
+    Route::post('/tasks', [AdminTaskController::class, 'store'])
+        ->name('admin.tasks.store');
+    Route::post('/admin/tasks/{task}/logs', [AdminTaskController::class, 'storeLog'])
+    ->name('admin.tasks.logs.store');
+    Route::delete('/tasks/{task}', [AdminTaskController::class, 'destroy'])
+        ->name('admin.tasks.destroy');
+
 });
 
 Route::middleware(['auth','role:admin,manager'])->group(function () {
@@ -94,6 +111,9 @@ Route::middleware(['auth','role:employee,manager'])->group(function(){
 
       Route::get('/my-attendance',[AttendanceController::class,'myAttendance'])
         ->name('attendance.my');
+    Route::get('/attendance/{date}',
+    [AttendanceController::class, 'show']
+)->name('employee.attendance.show');
 
     Route::post('/attendance/check-in',[AttendanceController::class,'checkIn'])
         ->name('attendance.checkin');
@@ -109,11 +129,11 @@ Route::middleware(['auth','role:employee,manager'])->group(function(){
 
 Route::middleware(['auth','role:employee'])->group(function(){
 
-   
 
-   
+
+
 });
 
-    
+
 
 require __DIR__.'/auth.php';
