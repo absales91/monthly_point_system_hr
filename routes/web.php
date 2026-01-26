@@ -24,7 +24,7 @@ Route::view('profile', 'profile')
 
 Route::middleware(['auth','role:admin,manager'])->group(function(){
 
-    Route::get('/attendance',[AttendanceController::class,'index'])
+    Route::get('/manage-attendance',[AttendanceController::class,'index'])
         ->name('attendance.index');
 
     Route::post('/attendance/store',[AttendanceController::class,'store'])
@@ -111,7 +111,7 @@ Route::middleware(['auth','role:employee,manager'])->group(function(){
 
       Route::get('/my-attendance',[AttendanceController::class,'myAttendance'])
         ->name('attendance.my');
-    Route::get('/attendance/{date}', 
+    Route::get('/attendance/{date}',
     [AttendanceController::class, 'show']
 )->name('employee.attendance.show');
 
@@ -129,11 +129,11 @@ Route::middleware(['auth','role:employee,manager'])->group(function(){
 
 Route::middleware(['auth','role:employee'])->group(function(){
 
-   
 
-   
+
+
 });
 
-    
+
 
 require __DIR__.'/auth.php';
