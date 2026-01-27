@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminProductCategoryController;
 use App\Http\Controllers\AdminTaskController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
@@ -84,6 +85,16 @@ Route::middleware(['auth','role:admin'])->group(function () {
     ->name('admin.tasks.logs.store');
     Route::delete('/tasks/{task}', [AdminTaskController::class, 'destroy'])
         ->name('admin.tasks.destroy');
+
+    // product categories
+     Route::get('/categories', [AdminProductCategoryController::class, 'index']);
+    Route::get('/categories/create', [AdminProductCategoryController::class, 'create'])->name('admin.categories.create');
+    Route::post('/categories', [AdminProductCategoryController::class, 'store']);
+
+    // Products
+    Route::get('/products', [AdminProductCategoryController::class, 'index']);
+    Route::get('/products/create', [AdminProductCategoryController::class, 'create']);
+    Route::post('/products', [AdminProductCategoryController::class, 'store']);
 
 });
 
