@@ -31,7 +31,7 @@ class AuthController extends Controller
         }
 
         // 🔐 Remove old tokens (recommended)
-        $user->tokens()->delete();
+        // $user->tokens()->delete();
 
         // 🔑 Create new token
         $token = $user->createToken('flutter-app')->plainTextToken;
