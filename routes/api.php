@@ -55,5 +55,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Update lead status
     Route::post('/leads/{id}/status', [LeadController::class, 'updateStatus']);
 
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
+
 
 });
