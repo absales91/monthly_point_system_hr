@@ -30,3 +30,7 @@ Schedule::command('indiamart:fetch-leads')
     ->timezone('Asia/Kolkata')
     ->withoutOverlapping()
     ->runInBackground();
+    
+Schedule::command('attendance:reminder')
+        ->weekdays()
+        ->dailyAt('09:30');

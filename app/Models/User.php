@@ -76,4 +76,9 @@ function isAdminOrManager()
     return auth()->check() &&
            in_array(auth()->user()->role, ['admin','manager']);
 }
+
+public function attendances()
+{
+    return $this->hasMany(Attendance::class, 'employee_id');
+}
 }
