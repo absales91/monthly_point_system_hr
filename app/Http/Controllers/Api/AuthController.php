@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\EmailOtpMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
@@ -199,10 +200,12 @@ class AuthController extends Controller
         'updated_at' => now(),
     ]);
 
-    Mail::raw("Your verification OTP is: $otp", function ($msg) use ($request) {
-        $msg->to($request->email)
-            ->subject('Verify Your Email');
-    });
+    // Mail::raw("Your verification OTP is: $otp", function ($msg) use ($request) {
+    //     $msg->to($request->email)
+    //         ->subject('Verify Your Email');
+    // });
+    Mail::to($request->email)->send(new EmailOtpMail($otp));
+
 
     return response()->json([
         'success' => true,
