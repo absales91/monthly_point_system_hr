@@ -7,6 +7,7 @@ use App\Mail\EmailOtpMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
@@ -252,6 +253,57 @@ public function verifyOtp(Request $request)
         'message' => 'Email verified & registration completed',
         'token' => $token,
         'user' => $user,
+    ]);
+}
+
+public function resendOtp(Request $request)
+{
+    $request->validate([
+        'email' => 'required|email',
+    ]);
+
+    // ❌ If user already exists → no OTP resend
+    if (\App\Models\User::where('email', $request->email)->exists()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Email already registered. Please login.',
+        ], 409);
+    }
+
+    // ⏱ Rate limit: allow resend only after 60 seconds
+    $lastOtp = DB::table('email_otps')
+        ->where('email', $request->email)
+        ->orderBy('created_at', 'desc')
+        ->first();
+
+    if ($lastOtp && Carbon::parse($lastOtp->created_at)->diffInSeconds(now()) < 60) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Please wait before requesting another OTP.',
+        ], 429);
+    }
+
+    // 🔢 Generate new OTP
+    $otp = rand(100000, 999999);
+
+    // ❌ Delete old OTPs
+    DB::table('email_otps')->where('email', $request->email)->delete();
+
+    // ✅ Store new OTP
+    DB::table('email_otps')->insert([
+        'email' => $request->email,
+        'otp' => $otp,
+        'expires_at' => now()->addMinutes(5),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    // 📧 Send OTP email
+    Mail::to($request->email)->send(new EmailOtpMail($otp));
+
+    return response()->json([
+        'success' => true,
+        'message' => 'OTP resent successfully to your email.',
     ]);
 }
 }
