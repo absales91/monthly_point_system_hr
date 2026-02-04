@@ -269,7 +269,7 @@ class AttendanceController extends Controller
                 return [
                     'type' => $row->punch_type, // in / out
                     'time' => Carbon::parse($row->created_at)
-                        ->timezone('Asia/Kolkata')
+                        // ->timezone('Asia/Kolkata')
                         ->format('h:i A'),
                     'image' => url($row->image),
                     'latitude' => $row->latitude,
