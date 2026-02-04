@@ -17,7 +17,8 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register/verify-otp', [AuthController::class, 'verifyOtp']);
 Route::post('/register/resend-otp', [AuthController::class, 'resendOtp']);
 
-
+Route::post('/forgot-password/send-otp', [AuthController::class, 'sendForgotOtp']);
+Route::post('/forgot-password/reset', [AuthController::class, 'resetPassword']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard', [Dashboard::class, 'index']);
    Route::post('/attendance/punch', [AttendanceController::class, 'punch']);

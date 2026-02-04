@@ -20,7 +20,7 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
-       
+
         $request->validate([
             'email'    => 'required|email',
             'password' => 'required',
@@ -84,13 +84,13 @@ class AuthController extends Controller
                 'message' => 'Old password is incorrect'
             ], 422);
         }
-        if($request->old_password === $request->new_password){
+        if ($request->old_password === $request->new_password) {
             return response()->json([
                 'status' => false,
                 'message' => 'New password cannot be the same as old password'
             ], 422);
         }
-        if($request->new_password !== $request->new_password_confirmation){
+        if ($request->new_password !== $request->new_password_confirmation) {
             return response()->json([
                 'status' => false,
                 'message' => 'New password and confirmation do not match'
@@ -147,7 +147,7 @@ class AuthController extends Controller
         ], 201);
     }
 
-     public function deleteAccount(Request $request)
+    public function deleteAccount(Request $request)
     {
         $user = auth()->user();
 
@@ -162,7 +162,7 @@ class AuthController extends Controller
             $user->tokens()->delete();
 
             // Soft delete user (recommended)
-            
+
             $user->delete();
 
             DB::commit();
@@ -181,129 +181,197 @@ class AuthController extends Controller
         }
     }
     public function sendOtp(Request $request)
-{
-    $request->validate([
-        'name' => 'required|string',
-        'email' => 'required|email|unique:users,email',
-        'password' => 'required|min:6',
-    ]);
+    {
+        $request->validate([
+            'name' => 'required|string',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:6',
+        ]);
 
-    $otp = rand(100000, 999999);
+        $otp = rand(100000, 999999);
 
-    // delete old OTPs
-    DB::table('email_otps')->where('email', $request->email)->delete();
+        // delete old OTPs
+        DB::table('email_otps')->where('email', $request->email)->delete();
 
-    DB::table('email_otps')->insert([
-        'email' => $request->email,
-        'otp' => $otp,
-        'expires_at' => now()->addMinutes(5),
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        DB::table('email_otps')->insert([
+            'email' => $request->email,
+            'otp' => $otp,
+            'expires_at' => now()->addMinutes(5),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-    // Mail::raw("Your verification OTP is: $otp", function ($msg) use ($request) {
-    //     $msg->to($request->email)
-    //         ->subject('Verify Your Email');
-    // });
-    Mail::to($request->email)->send(new EmailOtpMail($otp));
+        // Mail::raw("Your verification OTP is: $otp", function ($msg) use ($request) {
+        //     $msg->to($request->email)
+        //         ->subject('Verify Your Email');
+        // });
+        Mail::to($request->email)->send(new EmailOtpMail($otp));
 
 
-    return response()->json([
-        'success' => true,
-        'message' => 'OTP sent to your email',
-    ]);
-}
-public function verifyOtp(Request $request)
-{
-    $request->validate([
-        'name' => 'required|string',
-        'email' => 'required|email',
-        'password' => 'required',
-        'otp' => 'required',
-    ]);
-
-    $record = DB::table('email_otps')
-        ->where('email', $request->email)
-        ->where('otp', $request->otp)
-        ->where('expires_at', '>', now())
-        ->first();
-
-    if (!$record) {
         return response()->json([
-            'success' => false,
-            'message' => 'Invalid or expired OTP',
-        ], 400);
+            'success' => true,
+            'message' => 'OTP sent to your email',
+        ]);
+    }
+    public function verifyOtp(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string',
+            'email' => 'required|email',
+            'password' => 'required',
+            'otp' => 'required',
+        ]);
+
+        $record = DB::table('email_otps')
+            ->where('email', $request->email)
+            ->where('otp', $request->otp)
+            ->where('expires_at', '>', now())
+            ->first();
+
+        if (!$record) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired OTP',
+            ], 400);
+        }
+
+        // create user
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'role' => 'employee',
+            'email_verified_at' => now(),
+        ]);
+
+        DB::table('email_otps')->where('email', $request->email)->delete();
+
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Email verified & registration completed',
+            'token' => $token,
+            'user' => $user,
+        ]);
     }
 
-    // create user
-    $user = User::create([
-        'name' => $request->name,
-        'email' => $request->email,
-        'password' => Hash::make($request->password),
-        'role' => 'employee',
-        'email_verified_at' => now(),
-    ]);
+    public function resendOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
 
-    DB::table('email_otps')->where('email', $request->email)->delete();
+        // ❌ If user already exists → no OTP resend
+        if (\App\Models\User::where('email', $request->email)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email already registered. Please login.',
+            ], 409);
+        }
 
-    $token = $user->createToken('auth_token')->plainTextToken;
+        // ⏱ Rate limit: allow resend only after 60 seconds
+        $lastOtp = DB::table('email_otps')
+            ->where('email', $request->email)
+            ->orderBy('created_at', 'desc')
+            ->first();
 
-    return response()->json([
-        'success' => true,
-        'message' => 'Email verified & registration completed',
-        'token' => $token,
-        'user' => $user,
-    ]);
-}
+        if ($lastOtp && Carbon::parse($lastOtp->created_at)->diffInSeconds(now()) < 60) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please wait before requesting another OTP.',
+            ], 429);
+        }
 
-public function resendOtp(Request $request)
-{
-    $request->validate([
-        'email' => 'required|email',
-    ]);
+        // 🔢 Generate new OTP
+        $otp = rand(100000, 999999);
 
-    // ❌ If user already exists → no OTP resend
-    if (\App\Models\User::where('email', $request->email)->exists()) {
+        // ❌ Delete old OTPs
+        DB::table('email_otps')->where('email', $request->email)->delete();
+
+        // ✅ Store new OTP
+        DB::table('email_otps')->insert([
+            'email' => $request->email,
+            'otp' => $otp,
+            'expires_at' => now()->addMinutes(5),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // 📧 Send OTP email
+        Mail::to($request->email)->send(new EmailOtpMail($otp));
+
         return response()->json([
-            'success' => false,
-            'message' => 'Email already registered. Please login.',
-        ], 409);
+            'success' => true,
+            'message' => 'OTP resent successfully to your email.',
+        ]);
     }
 
-    // ⏱ Rate limit: allow resend only after 60 seconds
-    $lastOtp = DB::table('email_otps')
-        ->where('email', $request->email)
-        ->orderBy('created_at', 'desc')
-        ->first();
+    public function sendForgotOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+        ]);
 
-    if ($lastOtp && Carbon::parse($lastOtp->created_at)->diffInSeconds(now()) < 60) {
+        // 🔢 Generate OTP
+        $otp = rand(100000, 999999);
+
+        // ❌ Delete old OTPs for this email
+        DB::table('email_otps')
+            ->where('email', $request->email)
+            ->delete();
+
+        // ✅ Insert new OTP
+        DB::table('email_otps')->insert([
+            'email' => $request->email,
+            'otp' => $otp,
+            'expires_at' => now()->addMinutes(5),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // 📧 Send OTP email
+        Mail::to($request->email)->send(new EmailOtpMail($otp));
+
         return response()->json([
-            'success' => false,
-            'message' => 'Please wait before requesting another OTP.',
-        ], 429);
+            'success' => true,
+            'message' => 'Password reset OTP sent to your email',
+        ]);
     }
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required',
+            'password' => 'required|min:6|confirmed',
+        ]);
 
-    // 🔢 Generate new OTP
-    $otp = rand(100000, 999999);
+        $record = DB::table('email_otps')
+            ->where('email', $request->email)
+            ->where('otp', $request->otp)
+            ->where('expires_at', '>', now())
+            ->first();
 
-    // ❌ Delete old OTPs
-    DB::table('email_otps')->where('email', $request->email)->delete();
+        if (!$record) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired OTP',
+            ], 400);
+        }
 
-    // ✅ Store new OTP
-    DB::table('email_otps')->insert([
-        'email' => $request->email,
-        'otp' => $otp,
-        'expires_at' => now()->addMinutes(5),
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        // 🔐 Update user password
+        User::where('email', $request->email)->update([
+            'password' => Hash::make($request->password),
+        ]);
 
-    // 📧 Send OTP email
-    Mail::to($request->email)->send(new EmailOtpMail($otp));
+        // ❌ Delete OTP after successful reset
+        DB::table('email_otps')
+            ->where('email', $request->email)
+            ->delete();
 
-    return response()->json([
-        'success' => true,
-        'message' => 'OTP resent successfully to your email.',
-    ]);
-}
+        return response()->json([
+            'success' => true,
+            'message' => 'Password reset successful. Please login.',
+        ]);
+    }
 }
