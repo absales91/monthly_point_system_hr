@@ -34,6 +34,6 @@ Schedule::command('indiamart:fetch-leads')
 Schedule::command('attendance:reminder')
     ->days([1, 2, 3, 4, 5, 6]) // Mon–Sat
     ->timezone('Asia/Kolkata')
-    ->dailyAt('09:30')
+    ->dailyAt('10:00')
     ->withoutOverlapping()
     ->onOneServer();
