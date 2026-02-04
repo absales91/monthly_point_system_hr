@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 
 class AuthController extends Controller
@@ -177,4 +178,77 @@ class AuthController extends Controller
             ], 500);
         }
     }
+    public function sendOtp(Request $request)
+{
+    $request->validate([
+        'name' => 'required|string',
+        'email' => 'required|email|unique:users,email',
+        'password' => 'required|min:6',
+    ]);
+
+    $otp = rand(100000, 999999);
+
+    // delete old OTPs
+    DB::table('email_otps')->where('email', $request->email)->delete();
+
+    DB::table('email_otps')->insert([
+        'email' => $request->email,
+        'otp' => $otp,
+        'expires_at' => now()->addMinutes(5),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    Mail::raw("Your verification OTP is: $otp", function ($msg) use ($request) {
+        $msg->to($request->email)
+            ->subject('Verify Your Email');
+    });
+
+    return response()->json([
+        'success' => true,
+        'message' => 'OTP sent to your email',
+    ]);
+}
+public function verifyOtp(Request $request)
+{
+    $request->validate([
+        'name' => 'required|string',
+        'email' => 'required|email',
+        'password' => 'required',
+        'otp' => 'required',
+    ]);
+
+    $record = DB::table('email_otps')
+        ->where('email', $request->email)
+        ->where('otp', $request->otp)
+        ->where('expires_at', '>', now())
+        ->first();
+
+    if (!$record) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Invalid or expired OTP',
+        ], 400);
+    }
+
+    // create user
+    $user = User::create([
+        'name' => $request->name,
+        'email' => $request->email,
+        'password' => Hash::make($request->password),
+        'role' => 'employee',
+        'email_verified_at' => now(),
+    ]);
+
+    DB::table('email_otps')->where('email', $request->email)->delete();
+
+    $token = $user->createToken('auth_token')->plainTextToken;
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Email verified & registration completed',
+        'token' => $token,
+        'user' => $user,
+    ]);
+}
 }
