@@ -14,7 +14,7 @@ class AttendanceController extends Controller
      * 🔁 SINGLE PUNCH API (IN / OUT)
      * Replaces checkIn & checkOut
      */
-      public function punch(Request $request)
+    public function punch(Request $request)
     {
         $request->validate([
             'image'     => 'required|image|mimes:jpg,jpeg,png|max:2048',
@@ -61,6 +61,20 @@ class AttendanceController extends Controller
         $image->move($destination, $filename);
         $imagePath = 'attendance/' . $filename;
 
+        $recentPunch = DB::table('attendance_logs')
+    ->where('employee_id', $employeeId)
+    ->where('punch_type', $request->type)
+    ->where('created_at', '>=', now()->subSeconds(10))
+    ->exists();
+
+if ($recentPunch) {
+    return response()->json([
+        'success' => false,
+        'message' => 'Punch already recorded. Please wait.',
+    ], 429);
+}
+
+
         // 📝 Insert punch log
         DB::table('attendance_logs')->insert([
             'employee_id' => $employeeId,
@@ -75,8 +89,11 @@ class AttendanceController extends Controller
 
         // 🔄 Recalculate attendance on OUT
         if ($request->type === 'out') {
-            $this->calculateTodayAttendance($employeeId);
-        }
+    DB::transaction(function () use ($employeeId) {
+        $this->calculateTodayAttendance($employeeId);
+    });
+}
+
 
         return response()->json([
             'success'    => true,
@@ -94,29 +111,25 @@ class AttendanceController extends Controller
         $today = Carbon::now('Asia/Kolkata')->toDateString();
 
         // 🔹 User HR settings
+        // 🔹 User
         $user = DB::table('users')->where('id', $employeeId)->first();
 
-        // 🔹 Approved leave check
-        // $onLeave = DB::table('employee_leaves')
-        //     ->where('employee_id', $employeeId)
-        //     ->where('date', $today)
-        //     ->where('status', 'approved')
-        //     ->exists();
+        // 🔹 Defaults
+        $defaults = $this->getOfficeDefaults();
 
-        // if ($onLeave) {
-        //     Attendance::updateOrCreate(
-        //         ['employee_id' => $employeeId, 'date' => $today],
-        //         ['working_minutes' => 0, 'status' => 'leave']
-        //     );
-        //     return 0;
-        // }
+        // 🔹 Safe HR values (fallback to defaults)
+        $officeInTime  = $user->office_in_time ?? $defaults['office_in'];
+        $officeOutTime = $user->office_out_time ?? $defaults['office_out'];
+        $halfDayHours  = $user->half_day_hours ?? $defaults['half_day_hours'];
+        $lateGrace     = $user->late_minutes_allowed ?? $defaults['late_minutes_allowed'];
 
         // 🔹 Office timings
-        $officeIn  = Carbon::parse($today . ' ' . $user->office_in_time);
-        $officeOut = Carbon::parse($today . ' ' . $user->office_out_time);
+        $officeIn  = Carbon::parse($today . ' ' . $officeInTime);
+        $officeOut = Carbon::parse($today . ' ' . $officeOutTime);
 
+        // 🔹 Working minutes thresholds
         $fullDayMinutes = $officeIn->diffInMinutes($officeOut);
-        $halfDayMinutes = ($user->half_day_hours ?? 4) * 60;
+        $halfDayMinutes = $halfDayHours * 60;
 
         // 🔹 Punch logs
         $logs = DB::table('attendance_logs')
@@ -168,7 +181,7 @@ class AttendanceController extends Controller
 
         // 🔹 Late calculation
         $firstIn = Carbon::parse($firstInLog->created_at);
-        $lateGrace = $user->late_minutes_allowed ?? 15;
+        // $lateGrace = $user->late_minutes_allowed ?? 15;
         $lateCutoff = $officeIn->copy()->addMinutes($lateGrace);
         $isLate = $firstIn->greaterThan($lateCutoff);
 
@@ -283,5 +296,15 @@ class AttendanceController extends Controller
             'total_punches' => $punches->count(),
             'punches' => $punches,
         ]);
+    }
+
+    private function getOfficeDefaults()
+    {
+        return [
+            'office_in' => '10:00:00',
+            'office_out' => '19:00:00',
+            'half_day_hours' => 4,
+            'late_minutes_allowed' => 15,
+        ];
     }
 }
