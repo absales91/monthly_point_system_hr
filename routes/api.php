@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 
 Route::post('/login', [AuthController::class, 'login']);
 
+    Route::post('/register',[AuthController::class,'register']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard', [Dashboard::class, 'index']);
@@ -59,7 +60,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/delete-account', [AuthController::class, 'deleteAccount']);
 
-    Route::post('/register',[AuthController::class,'register']);
 
 
 });
