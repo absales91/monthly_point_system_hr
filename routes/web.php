@@ -145,6 +145,10 @@ Route::middleware(['auth','role:employee'])->group(function(){
 
 });
 
+Route::get('/delete-account',[EmployeeController::class,'deleteAccount']);
+Route::post('/delete-account',[EmployeeController::class,'deleteAccountStore'])
+    ->name('delete-account.store');
+
 
 
 require __DIR__.'/auth.php';

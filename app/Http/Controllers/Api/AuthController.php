@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class AuthController extends Controller
 {
@@ -100,5 +101,79 @@ class AuthController extends Controller
             'status' => true,
             'message' => 'Password changed successfully'
         ]);
+    }
+
+    public function register(Request $request)
+    {
+        // ✅ Validation
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:6|confirmed',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+            ], 422);
+        }
+
+        // ✅ Create user
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'role' => 'employee', // default role
+        ]);
+
+        // ✅ Create token (Sanctum)
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registration successful',
+            'token' => $token,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+            ],
+        ], 201);
+    }
+
+     public function deleteAccount(Request $request)
+    {
+        $user = auth()->user();
+
+        DB::beginTransaction();
+        try {
+            // Delete related records (adjust table names if needed)
+            DB::table('attendances')->where('user_id', $user->id)->delete();
+            DB::table('reward_wallets')->where('user_id', $user->id)->delete();
+            DB::table('monthly_points')->where('user_id', $user->id)->delete();
+
+            // Revoke all API tokens
+            $user->tokens()->delete();
+
+            // Soft delete user (recommended)
+            
+            $user->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Account deleted successfully'
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Deletion failed'
+            ], 500);
+        }
     }
 }

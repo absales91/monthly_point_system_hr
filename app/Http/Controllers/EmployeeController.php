@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class EmployeeController extends Controller
@@ -96,4 +97,24 @@ class EmployeeController extends Controller
 
     return $pdf->download("salary-slip-$month-$year.pdf");
 }
+
+public function deleteAccount(){
+    return view('delete-account');
+
+}
+
+ public function deleteAccountStore(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email'
+        ]);
+
+        DB::table('account_delete_requests')->insert([
+            'email' => $request->email,
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Your account deletion request has been submitted. It will be processed within 7–30 days.');
+    }
 }
