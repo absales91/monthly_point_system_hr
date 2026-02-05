@@ -15,11 +15,19 @@ class MarkAbsentCron extends Command
     public function handle()
     {
         $today = Carbon::now('Asia/Kolkata')->toDateString();
+        $officeStart = Carbon::parse($today . ' 10:00:00');
 
-        // 🔹 Get all active employees
         $employees = DB::table('users')
-           ->where('role', 'employee')
+            ->where('role', 'employee')
+            ->where(function ($q) use ($today, $officeStart) {
+                $q->whereDate('created_at', '<', $today)
+                    ->orWhere(function ($q2) use ($today, $officeStart) {
+                        $q2->whereDate('created_at', '=', $today)
+                            ->whereTime('created_at', '<', $officeStart);
+                    });
+            })
             ->get();
+
 
         foreach ($employees as $employee) {
 

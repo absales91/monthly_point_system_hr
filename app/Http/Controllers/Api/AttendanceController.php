@@ -12,7 +12,6 @@ class AttendanceController extends Controller
 {
     /**
      * 🔁 SINGLE PUNCH API (IN / OUT)
-     * Replaces checkIn & checkOut
      */
     public function punch(Request $request)
     {
@@ -61,38 +60,36 @@ class AttendanceController extends Controller
         $image->move($destination, $filename);
         $imagePath = 'attendance/' . $filename;
 
+        // Duplicate prevention (10 seconds)
         $recentPunch = DB::table('attendance_logs')
-    ->where('employee_id', $employeeId)
-    ->where('punch_type', $request->type)
-    ->where('created_at', '>=', now()->subSeconds(10))
-    ->exists();
+            ->where('employee_id', $employeeId)
+            ->where('punch_type', $request->type)
+            ->where('created_at', '>=', now()->subSeconds(10))
+            ->exists();
 
-if ($recentPunch) {
-    return response()->json([
-        'success' => false,
-        'message' => 'Punch already recorded. Please wait.',
-    ], 429);
-}
+        if ($recentPunch) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Punch already recorded. Please wait.',
+            ], 429);
+        }
 
+        DB::transaction(function () use ($employeeId, $today, $now, $request, $imagePath) {
 
-        // 📝 Insert punch log
-        DB::table('attendance_logs')->insert([
-            'employee_id' => $employeeId,
-            'date'        => $today,
-            'punch_type'  => $request->type,
-            'image'       => $imagePath,
-            'latitude'    => $request->latitude,
-            'longitude'   => $request->longitude,
-            'created_at'  => $now,
-            'updated_at'  => $now,
-        ]);
+            DB::table('attendance_logs')->insert([
+                'employee_id' => $employeeId,
+                'date'        => $today,
+                'punch_type'  => $request->type,
+                'image'       => $imagePath,
+                'latitude'    => $request->latitude,
+                'longitude'   => $request->longitude,
+                'created_at'  => $now,
+                'updated_at'  => $now,
+            ]);
 
-        // 🔄 Recalculate attendance on OUT
-        if ($request->type === 'out') {
-    DB::transaction(function () use ($employeeId) {
-        $this->calculateTodayAttendance($employeeId);
-    });
-}
+            // Recalculate inside SAME transaction
+            $this->calculateTodayAttendance($employeeId);
+        });
 
 
         return response()->json([
@@ -110,28 +107,24 @@ if ($recentPunch) {
     {
         $today = Carbon::now('Asia/Kolkata')->toDateString();
 
-        // 🔹 User HR settings
-        // 🔹 User
         $user = DB::table('users')->where('id', $employeeId)->first();
+        if (!$user) {
+            throw new \Exception("User not found for attendance calculation.");
+        }
 
-        // 🔹 Defaults
         $defaults = $this->getOfficeDefaults();
 
-        // 🔹 Safe HR values (fallback to defaults)
         $officeInTime  = $user->office_in_time ?? $defaults['office_in'];
         $officeOutTime = $user->office_out_time ?? $defaults['office_out'];
         $halfDayHours  = $user->half_day_hours ?? $defaults['half_day_hours'];
         $lateGrace     = $user->late_minutes_allowed ?? $defaults['late_minutes_allowed'];
 
-        // 🔹 Office timings
         $officeIn  = Carbon::parse($today . ' ' . $officeInTime);
         $officeOut = Carbon::parse($today . ' ' . $officeOutTime);
 
-        // 🔹 Working minutes thresholds
         $fullDayMinutes = $officeIn->diffInMinutes($officeOut);
         $halfDayMinutes = $halfDayHours * 60;
 
-        // 🔹 Punch logs
         $logs = DB::table('attendance_logs')
             ->where('employee_id', $employeeId)
             ->where('date', $today)
@@ -141,54 +134,81 @@ if ($recentPunch) {
         if ($logs->isEmpty()) {
             Attendance::updateOrCreate(
                 ['employee_id' => $employeeId, 'date' => $today],
-                ['working_minutes' => 0, 'status' => 'absent']
+                [
+                    'working_minutes' => 0,
+                    'actual_minutes'  => 0,
+                    'overtime_minutes' => 0,
+                    'status' => 'absent'
+                ]
             );
             return 0;
         }
 
-        // 🔹 First IN punch (safe late check)
         $firstInLog = $logs->firstWhere('punch_type', 'in');
 
         if (!$firstInLog) {
             Attendance::updateOrCreate(
                 ['employee_id' => $employeeId, 'date' => $today],
-                ['working_minutes' => 0, 'status' => 'absent']
+                [
+                    'working_minutes' => 0,
+                    'actual_minutes'  => 0,
+                    'overtime_minutes' => 0,
+                    'status' => 'absent'
+                ]
             );
             return 0;
         }
 
-        // 🔁 Calculate working minutes (handles missing OUT)
+        // 🔁 Pair IN/OUT safely
         $totalMinutes = 0;
+        $inTime = null;
 
-        for ($i = 0; $i < count($logs); $i++) {
-            if ($logs[$i]->punch_type === 'in') {
+        foreach ($logs as $log) {
 
-                $in = Carbon::parse($logs[$i]->created_at);
+            if ($log->punch_type === 'in') {
+                $inTime = Carbon::parse($log->created_at);
+            }
 
-                if (isset($logs[$i + 1]) && $logs[$i + 1]->punch_type === 'out') {
-                    $out = Carbon::parse($logs[$i + 1]->created_at);
-                    $i++; // skip next
-                } else {
-                    // Missing OUT → assume office out
-                    $out = $officeOut;
+            if ($log->punch_type === 'out' && $inTime) {
+                $outTime = Carbon::parse($log->created_at);
+
+                if ($outTime->greaterThanOrEqualTo($inTime)) {
+                    $totalMinutes += $inTime->diffInMinutes($outTime);
                 }
 
-                if ($out->greaterThan($in)) {
-                    $totalMinutes += $in->diffInMinutes($out);
-                }
+                $inTime = null;
             }
         }
 
-        // 🔹 Late calculation
+        // If still IN without OUT
+        if ($inTime) {
+            $outTime = Carbon::now('Asia/Kolkata');
+            if ($outTime->greaterThan($officeOut)) {
+                $outTime = $officeOut;
+            }
+            $totalMinutes += $inTime->diffInMinutes($outTime);
+        }
+
+        // 🔹 Late check
         $firstIn = Carbon::parse($firstInLog->created_at);
-        // $lateGrace = $user->late_minutes_allowed ?? 15;
         $lateCutoff = $officeIn->copy()->addMinutes($lateGrace);
         $isLate = $firstIn->greaterThan($lateCutoff);
 
-        // 🔹 Final status
+        // Preserve real total before capping
+        $actualMinutes = $totalMinutes;
+        $overtimeMinutes = $totalMinutes > $fullDayMinutes
+            ? ($totalMinutes - $fullDayMinutes)
+            : 0;
+
+        // Cap for attendance status
+        $totalMinutes = min($totalMinutes, $fullDayMinutes);
+
+        // 🔹 Final status rules
         if ($totalMinutes >= $fullDayMinutes) {
             $status = $isLate ? 'late' : 'present';
-        } elseif ($totalMinutes >= $halfDayMinutes) {
+        } elseif ($totalMinutes >= (4 * 60)) {
+            $status = 'short_leave';
+        } elseif ($totalMinutes >= (2 * 60)) {
             $status = 'half_day';
         } else {
             $status = 'absent';
@@ -197,15 +217,15 @@ if ($recentPunch) {
         Attendance::updateOrCreate(
             ['employee_id' => $employeeId, 'date' => $today],
             [
-                'working_minutes' => $totalMinutes,
-                'status'          => $status,
+                'working_minutes'  => $totalMinutes,
+                'actual_minutes'   => $actualMinutes,
+                'overtime_minutes' => $overtimeMinutes,
+                'status'           => $status,
             ]
         );
 
         return $totalMinutes;
     }
-
-
 
     /**
      * 📊 Monthly Attendance Summary
@@ -221,14 +241,7 @@ if ($recentPunch) {
         $records = Attendance::where('employee_id', $employeeId)
             ->whereBetween('date', [$startDate, $endDate])
             ->orderBy('date', 'desc')
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'date' => Carbon::parse($row->date)->format('d M Y'),
-                    'working_minutes' => (int) $row->working_minutes,
-                    'status' => $row->status,
-                ];
-            });
+            ->get();
 
         $summary = [
             'month' => $startDate->format('F Y'),
@@ -236,65 +249,13 @@ if ($recentPunch) {
             'half_day' => $records->where('status', 'half_day')->count(),
             'absent' => $records->where('status', 'absent')->count(),
             'total_working_minutes' => $records->sum('working_minutes'),
+            'total_overtime_minutes' => $records->sum('overtime_minutes'),
         ];
 
         return response()->json([
             'success' => true,
             'summary' => $summary,
             'records' => $records,
-        ]);
-    }
-
-    /**
-     * 🔄 Get last punch (for Flutter button state)
-     */
-    public function lastPunch(Request $request)
-    {
-        $employeeId = $request->user()->id;
-        $today = Carbon::now('Asia/Kolkata')->toDateString();
-
-        $lastPunch = DB::table('attendance_logs')
-            ->where('employee_id', $employeeId)
-            ->where('date', $today)
-            ->orderByDesc('id')
-            ->value('punch_type');
-
-        return response()->json([
-            'last_punch' => $lastPunch ?? 'none',
-        ]);
-    }
-
-    public function punchesByDate(Request $request)
-    {
-        $request->validate([
-            'date' => 'required|date',
-        ]);
-
-        $employeeId = $request->user()->id;
-        $date = $request->date;
-
-        $punches = DB::table('attendance_logs')
-            ->where('employee_id', $employeeId)
-            ->where('date', $date)
-            ->orderBy('created_at')
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'type' => $row->punch_type, // in / out
-                    'time' => Carbon::parse($row->created_at)
-                        // ->timezone('Asia/Kolkata')
-                        ->format('h:i A'),
-                    'image' => url($row->image),
-                    'latitude' => $row->latitude,
-                    'longitude' => $row->longitude,
-                ];
-            });
-
-        return response()->json([
-            'success' => true,
-            'date' => $date,
-            'total_punches' => $punches->count(),
-            'punches' => $punches,
         ]);
     }
 
