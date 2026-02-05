@@ -37,8 +37,14 @@ Route::middleware(['auth','role:admin,manager'])->group(function(){
 
 
 Route::middleware(['auth','role:admin'])->group(function () {
-   Route::get('/employees', [EmployeeController::class, 'index'])
+   Route::get('/staff-list', [EmployeeController::class, 'index'])
         ->name('employees.index');
+Route::get('/staff/{id}', [EmployeeController::class, 'show'])->name('staff.show');
+
+// routes/web.php
+Route::get('/staff/{id}/attendance', [EmployeeController::class, 'attendance'])
+     ->name('employees.attendance');
+
 
     Route::get('/employees/create', [EmployeeController::class, 'create'])
         ->name('employees.create');

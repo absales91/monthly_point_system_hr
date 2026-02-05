@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Attendance;
 use App\Models\Employee;
+use App\Models\Salary;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -117,4 +119,44 @@ public function deleteAccount(){
 
         return back()->with('success', 'Your account deletion request has been submitted. It will be processed within 7–30 days.');
     }
+
+    public function show($id)
+{
+    $staff = User::findOrFail($id);
+
+    $month = now()->format('Y-m'); // current month
+
+    $salaries = Salary::where('employee_id', $id)
+        ->orderBy('month', 'desc')
+        ->get();
+
+    return view('employees.show', compact('staff', 'month', 'salaries'));
+}
+
+public function attendance($id)
+{
+    $staff = User::find($id);
+   
+
+    $month = request('month', now()->format('Y-m')); // e.g. 2026-02
+    $start = Carbon::parse($month . '-01')->startOfMonth();
+    $end   = Carbon::parse($month . '-01')->endOfMonth();
+
+    $records = Attendance::where('employee_id', $id)
+        ->whereBetween('date', [$start, $end])
+        ->orderBy('date', 'desc')
+        ->get();
+
+    // Summary counts
+    $present = $records->where('status', 'present')->count();
+    $absent  = $records->where('status', 'absent')->count();
+    $halfDay = $records->where('status', 'half_day')->count();
+    $leave   = $records->where('status', 'leave')->count();
+
+    return view('employees.attendance', compact(
+        'staff','records','month',
+        'present','absent','halfDay','leave'
+    ));
+}
+
 }

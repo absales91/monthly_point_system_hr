@@ -37,8 +37,8 @@ new class extends Component
                      <x-nav-link :href="route('attendance.index')" :active="request()->routeIs('attendance.index')" wire:navigate>
                         {{ __('Attendance') }}
                     </x-nav-link>
-                     <x-nav-link :href="route('admin.tasks.index')" :active="request()->routeIs('admin.tasks.index')" wire:navigate>
-                        {{ __('Manage Tasks') }}
+                     <x-nav-link :href="route('employees.index')" :active="request()->routeIs('employees.index')" wire:navigate>
+                        {{ __('Staff') }}
                     </x-nav-link>
                     @endif
                      @if(auth()->user()->role === 'employee' || auth()->user()->role === 'manager')
