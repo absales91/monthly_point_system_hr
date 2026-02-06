@@ -243,7 +243,14 @@ class AttendanceController extends Controller
         $records = Attendance::where('employee_id', $employeeId)
             ->whereBetween('date', [$startDate, $endDate])
             ->orderBy('date', 'desc')
-            ->get();
+            ->get()
+             ->map(function ($row) {
+                return [
+                    'date' => Carbon::parse($row->date)->format('d M Y'),
+                    'working_minutes' => (int) $row->working_minutes,
+                    'status' => $row->status,
+                ];
+            });
 
         $summary = [
             'month' => $startDate->format('F Y'),
