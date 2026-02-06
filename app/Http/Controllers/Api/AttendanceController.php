@@ -267,6 +267,62 @@ class AttendanceController extends Controller
             'records' => $records,
         ]);
     }
+    ///
+        /**
+     * 🔄 Get last punch (for Flutter button state)
+     */
+    public function lastPunch(Request $request)
+    {
+        $employeeId = $request->user()->id;
+        $today = Carbon::now('Asia/Kolkata')->toDateString();
+
+        $lastPunch = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $today)
+            ->orderByDesc('id')
+            ->value('punch_type');
+
+        return response()->json([
+            'last_punch' => $lastPunch ?? 'none',
+        ]);
+    }
+
+    public function punchesByDate(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date',
+        ]);
+
+        $employeeId = $request->user()->id;
+        $date = $request->date;
+
+        $punches = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $date)
+            ->orderBy('created_at')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'type' => $row->punch_type, // in / out
+                    'time' => Carbon::parse($row->created_at)
+                        // ->timezone('Asia/Kolkata')
+                        ->format('h:i A'),
+                    'image' => url($row->image),
+                    'latitude' => $row->latitude,
+                    'longitude' => $row->longitude,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'date' => $date,
+            'total_punches' => $punches->count(),
+            'punches' => $punches,
+        ]);
+    }
+
+
+    
 
     private function getOfficeDefaults()
     {
