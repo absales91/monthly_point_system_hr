@@ -40,37 +40,54 @@
 
     <div class="grid grid-cols-3 gap-3">
 
-        <button wire:click="markAttendance({{ $emp->id }}, 'present')"
-                class="border px-4 py-2 rounded-lg
-                {{ $record?->status == 'present' ? 'bg-green-100 border-green-400' : '' }}">
-            P | Present
-        </button>
+        <button
+wire:click="$dispatch('open-attendance-modal', { employeeId: {{$emp->id}}, date: $wire.date, status: 'present' })
+"
+class="border px-4 py-2 rounded-lg
+{{ $record?->status == 'present' ? 'bg-green-100 border-green-400' : '' }}">
+P | Present
+</button>
 
-        <button wire:click="markAttendance({{ $emp->id }}, 'half_day')"
-                class="border px-4 py-2 rounded-lg
-                {{ $record?->status == 'half_day' ? 'bg-yellow-100 border-yellow-400' : '' }}">
-            HD | Half Day
-        </button>
+<button
+wire:click="$dispatch('open-attendance-modal', {
+    employeeId: {{ $emp->id }},
+    date: $wire.date,
+    status: 'half_day'
+})"
+class="border px-4 py-2 rounded-lg
+{{ $record?->status == 'half_day' ? 'bg-yellow-100 border-yellow-400' : '' }}">
+HD | Half Day
+</button>
 
-        <button wire:click="markAttendance({{ $emp->id }}, 'absent')"
-                class="border px-4 py-2 rounded-lg
-                {{ $record?->status == 'absent' ? 'bg-red-100 border-red-400' : '' }}">
-            A | Absent
-        </button>
-        <button wire:click="markAttendance({{ $emp->id }}, 'short_leave')"
-                class="border px-4 py-2 rounded-lg
-                {{ $record?->status == 'short_leave' ? 'bg-red-100 border-red-400' : '' }}">
-            SL | Short Leave
-        </button>
-        <button wire:click="markAttendance({{ $emp->id }}, 'leave')"
-                class="border px-4 py-2 rounded-lg
-                {{ $record?->status == 'leave' ? 'bg-blue-100 border-blue-400' : '' }}">
-            L | Leave
-        </button>
+<button
+wire:click="markAbsent({{ $emp->id }}, '{{ $date }}')"
+class="border px-4 py-2 rounded-lg
+{{ $record?->status == 'absent' ? 'bg-red-100 border-red-400' : '' }}">
+A | Absent
+</button>
+
+<button
+wire:click="$dispatch('open-attendance-modal', {
+    employeeId: {{ $emp->id }},
+    date: $wire.date,
+    status: 'short_leave'
+})"
+class="border px-4 py-2 rounded-lg
+{{ $record?->status == 'short_leave' ? 'bg-red-100 border-red-400' : '' }}">
+SL | Short Leave
+</button>
+
+<button
+wire:click="markLeave({{ $emp->id }}, '{{ $date }}')"
+class="border px-4 py-2 rounded-lg
+{{ $record?->status == 'leave' ? 'bg-blue-100 border-blue-400' : '' }}">
+L | Leave
+</button>
+
 
     </div>
 </div>
 
 @endforeach
-
+<livewire:attendance-day-modal />
 </div>

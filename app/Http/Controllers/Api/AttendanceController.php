@@ -86,9 +86,10 @@ class AttendanceController extends Controller
                 'created_at'  => $now,
                 'updated_at'  => $now,
             ]);
-
+            if ($request->type === 'out') {
+                $this->calculateTodayAttendance($employeeId);
+            }
             // Recalculate inside SAME transaction
-            $this->calculateTodayAttendance($employeeId);
         });
 
 
@@ -221,6 +222,7 @@ class AttendanceController extends Controller
                 'actual_minutes'   => $actualMinutes,
                 'overtime_minutes' => $overtimeMinutes,
                 'status'           => $status,
+                'is_late'          => ($status === 'present' && $isLate), // ✅ key logic
             ]
         );
 

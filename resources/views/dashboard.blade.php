@@ -158,7 +158,7 @@
             Roles, status & access
         </p>
 
-        <a href="/employees"
+        <a href="{{ route('employees.index') }}"
            class="inline-block mt-6 bg-white text-red-700 px-4 py-2 rounded-lg text-sm font-semibold">
             Manage →
         </a>
