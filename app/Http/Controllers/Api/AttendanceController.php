@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -470,24 +471,89 @@ private function calculateTodayAttendance($employeeId)
         'employee_id' => 'nullable|exists:employees,id'
     ]);
 
-    $date = $request->date 
+    $date = $request->date
         ? Carbon::parse($request->date)->toDateString()
         : Carbon::today()->toDateString();
 
-    $query = Attendance::with('employee')
-        ->whereDate('created_at', $date);
+    // Get all employees (important for absent calculation)
+    $employeesQuery = User::query();
 
     if ($request->employee_id) {
-        $query->where('employee_id', $request->employee_id);
+        $employeesQuery->where('id', $request->employee_id);
     }
 
-    $attendances = $query->get();
+    $employees = $employeesQuery->get();
+
+    $present = 0;
+    $halfDay = 0;
+    $absent = 0;
+    $paidLeave = 0;
+    $lessHours = 0;
+    $overtime = 0;
+
+    $staff = [];
+
+    foreach ($employees as $employee) {
+
+        $attendance = Attendance::where('employee_id', $employee->id)
+            ->whereDate('created_at', $date)
+            ->first();
+
+        if ($attendance) {
+
+            // Count summary
+            if ($attendance->status == 'present') $present++;
+            if ($attendance->status == 'half_day') $halfDay++;
+            if ($attendance->status == 'paid_leave') $paidLeave++;
+
+            // Optional logic for less hours / overtime
+            if ($attendance->working_hours) {
+                $workedMinutes = \Carbon\Carbon::parse($attendance->working_hours)->hour * 60 +
+                                 \Carbon\Carbon::parse($attendance->working_hours)->minute;
+
+                if ($workedMinutes < 480) $lessHours++;     // Less than 8 hours
+                if ($workedMinutes > 540) $overtime++;      // More than 9 hours
+            }
+
+            $staff[] = [
+                'id' => $employee->id,
+                'name' => $employee->name,
+                'status' => $attendance->check_out
+                    ? 'completed'
+                    : 'punchedIn',
+                'punchIn' => $attendance->check_in,
+                'punchOut' => $attendance->check_out,
+                'hoursWorked' => $attendance->working_hours ?? "00:00"
+            ];
+
+        } else {
+
+            $absent++;
+
+            $staff[] = [
+                'id' => $employee->id,
+                'name' => $employee->name,
+                'status' => 'absent',
+                'punchIn' => null,
+                'punchOut' => null,
+                'hoursWorked' => "00:00"
+            ];
+        }
+    }
 
     return response()->json([
         'status' => true,
         'date' => $date,
-        'total_records' => $attendances->count(),
-        'data' => $attendances
+        'summary' => [
+            'present' => $present,
+            'half_day' => $halfDay,
+            'absent' => $absent,
+            'paid_leave' => $paidLeave,
+            'less_hours' => $lessHours,
+            'overtime' => $overtime,
+        ],
+        'staff' => $staff
     ]);
 }
+
 }
