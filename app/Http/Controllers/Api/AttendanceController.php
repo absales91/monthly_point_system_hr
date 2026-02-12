@@ -633,8 +633,8 @@ class AttendanceController extends Controller
                 'status'
             )
             ->where('employee_id', $user->id)
-            ->whereYear('created_at', $month->year)
-            ->whereMonth('created_at', $month->month)
+            ->whereYear('date', $month->year)
+            ->whereMonth('date', $month->month)
             ->get()
             ->keyBy('date');
 
