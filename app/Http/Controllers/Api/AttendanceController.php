@@ -507,8 +507,8 @@ public function dailyEmployeeAttendance(Request $request)
     $logs = DB::table('attendance_logs')
         ->select(
             'employee_id',
-            DB::raw("MIN(CASE WHEN type = 'in' THEN created_at END) as check_in"),
-            DB::raw("MAX(CASE WHEN type = 'out' THEN created_at END) as check_out")
+            DB::raw("MIN(CASE WHEN punch_type = 'in' THEN created_at END) as check_in"),
+            DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
         )
         ->whereDate('created_at', $date)
         ->groupBy('employee_id')
