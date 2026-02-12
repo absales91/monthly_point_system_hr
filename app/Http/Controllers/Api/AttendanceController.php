@@ -494,7 +494,7 @@ public function dailyEmployeeAttendance(Request $request)
     |--------------------------------------------------------------------------
     */
     $attendances = DB::table('attendances')
-        ->select('employee_id', 'working_minutes')
+        ->select('employee_id', 'actual_minutes')
         ->whereDate('created_at', $date)
         ->get()
         ->keyBy('employee_id');
@@ -533,7 +533,7 @@ public function dailyEmployeeAttendance(Request $request)
 
             $present++;
 
-            $workedMinutes = $attendances[$employee->id]->working_minutes ?? 0;
+            $workedMinutes = $attendances[$employee->id]->actual_minutes ?? 0;
 
             $checkIn = isset($logs[$employee->id]->check_in)
                 ? Carbon::parse($logs[$employee->id]->check_in)
