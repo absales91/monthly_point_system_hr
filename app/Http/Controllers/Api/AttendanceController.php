@@ -533,7 +533,7 @@ public function dailyEmployeeAttendance(Request $request)
 
             $present++;
 
-            $workedMinutes = $attendances[$employee->id]->worked_minutes ?? 0;
+            $workedMinutes = $attendances[$employee->id]->working_minutes ?? 0;
 
             $checkIn = isset($logs[$employee->id]->check_in)
                 ? Carbon::parse($logs[$employee->id]->check_in)
