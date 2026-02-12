@@ -464,7 +464,7 @@ private function calculateTodayAttendance($employeeId)
         ];
     }
 
- public function dailyEmployeeAttendance(Request $request)
+public function dailyEmployeeAttendance(Request $request)
 {
     $request->validate([
         'date' => 'nullable|date',
@@ -475,8 +475,9 @@ private function calculateTodayAttendance($employeeId)
         ? Carbon::parse($request->date)->toDateString()
         : Carbon::today()->toDateString();
 
-    // Only Employees
-    $employeesQuery = User::where('role', 'employee');
+    // Base employee query
+    $employeesQuery = DB::table('users')
+        ->where('role', 'employee');
 
     if ($request->employee_id) {
         $employeesQuery->where('id', $request->employee_id);
@@ -484,10 +485,20 @@ private function calculateTodayAttendance($employeeId)
 
     $employees = $employeesQuery->get();
 
+    // Fetch logs grouped (MIN = checkin, MAX = checkout)
+    $logs = DB::table('attendance_logs')
+        ->select(
+            'employee_id',
+            DB::raw('MIN(created_at) as check_in'),
+            DB::raw('MAX(created_at) as check_out')
+        )
+        ->whereDate('created_at', $date)
+        ->groupBy('employee_id')
+        ->get()
+        ->keyBy('employee_id');
+
     $present = 0;
-    $halfDay = 0;
     $absent = 0;
-    $paidLeave = 0;
     $lessHours = 0;
     $overtime = 0;
 
@@ -495,24 +506,13 @@ private function calculateTodayAttendance($employeeId)
 
     foreach ($employees as $employee) {
 
-        $attendance = Attendance::with(['logs' => function ($q) use ($date) {
-            $q->whereDate('created_at', $date)
-              ->orderBy('created_at', 'asc');
-        }])
-        ->where('employee_id', $employee->id)
-        ->whereDate('created_at', $date)
-        ->first();
-
-        if ($attendance && $attendance->logs->count() > 0) {
+        if (isset($logs[$employee->id])) {
 
             $present++;
 
-            $firstLog = $attendance->logs->first();
-            $lastLog = $attendance->logs->last();
-
-            $checkIn = Carbon::parse($firstLog->created_at);
-            $checkOut = $attendance->logs->count() > 1
-                ? Carbon::parse($lastLog->created_at)
+            $checkIn = Carbon::parse($logs[$employee->id]->check_in);
+            $checkOut = $logs[$employee->id]->check_in != $logs[$employee->id]->check_out
+                ? Carbon::parse($logs[$employee->id]->check_out)
                 : null;
 
             $workingMinutes = 0;
@@ -523,7 +523,6 @@ private function calculateTodayAttendance($employeeId)
 
             $hoursWorked = gmdate("H:i", $workingMinutes * 60);
 
-            // Less hours / overtime
             if ($workingMinutes < 480) $lessHours++;
             if ($workingMinutes > 540) $overtime++;
 
@@ -556,9 +555,9 @@ private function calculateTodayAttendance($employeeId)
         'date' => $date,
         'summary' => [
             'present' => $present,
-            'half_day' => $halfDay,
+            'half_day' => 0,
             'absent' => $absent,
-            'paid_leave' => $paidLeave,
+            'paid_leave' => 0,
             'less_hours' => $lessHours,
             'overtime' => $overtime,
         ],
