@@ -602,10 +602,13 @@ public function employeeMonthlyAttendance(Request $request)
 {
     $request->validate([
         'month' => 'nullable|date_format:Y-m',
-        'employee_id' => 'nullable|exists:users,id'
+        'employee_id' => 'required|exists:users,id'
     ]);
 
-    $user = User::find($request->employee_id );
+    $user = User::where('id', $request->employee_id)
+        ->where('role', 'employee')
+        ->first();
+
     if (!$user) {
         return response()->json([
             'status' => false,
