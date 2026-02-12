@@ -630,7 +630,7 @@ public function employeeMonthlyAttendance(Request $request)
     $attendances = DB::table('attendances')
         ->select(
             DB::raw("DATE(created_at) as date"),
-            'actual_minutes'
+            'actual_minutes','status'
         )
         ->where('employee_id', $user->id)
         ->whereYear('created_at', $month->year)
@@ -669,6 +669,7 @@ public function employeeMonthlyAttendance(Request $request)
     $present = 0;
     $absent = 0;
     $halfDay = 0;
+    $shortLeave = 0;
     $paidLeave = 0;
     $overtimeDays = 0;
 
@@ -700,13 +701,20 @@ public function employeeMonthlyAttendance(Request $request)
             $hoursWorked = gmdate("H:i", $workedMinutes * 60);
 
             // Summary Calculation
-            if ($workedMinutes >= 480) {
+            if ($attendances[$dateKey]->status === 'present') {
                 $present++;
                 $status = 'present';
-            } elseif ($workedMinutes > 0) {
+            } elseif ($attendances[$dateKey]->status === 'short_leave') {
+                $shortLeave++;
+                $status = 'short_leave';
+            } 
+            elseif ($attendances[$dateKey]->status === 'half_day') {
                 $halfDay++;
                 $status = 'half_day';
-            } else {
+            } 
+            elseif ($attendances[$dateKey]->status === 'paid_leave') { $paidLeave++; $status = 'paid_leave'; }
+
+            else {
                 $absent++;
                 $status = 'absent';
             }
@@ -752,6 +760,7 @@ public function employeeMonthlyAttendance(Request $request)
             'present' => $present,
             'absent' => $absent,
             'half_day' => $halfDay,
+'short_leave' => $shortLeave,
             'paid_leave' => $paidLeave,
             'overtime_days' => $overtimeDays,
         ],
