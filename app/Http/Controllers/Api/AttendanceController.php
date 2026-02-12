@@ -602,36 +602,38 @@ public function employeeMonthlyAttendance(Request $request)
 {
     $request->validate([
         'month' => 'nullable|date_format:Y-m',
-        // 'employee_id' => 'nullable|exists:users,id'
     ]);
 
-    $user = Auth::user(); // Logged in employee
+    $user = Auth::user();
 
+    // Selected month or current month
     $month = $request->month
         ? Carbon::createFromFormat('Y-m', $request->month)
         : Carbon::now();
 
-    $startDate = $month->copy()->startOfMonth();
-    $endDate   = $month->copy()->endOfMonth();
-
     /*
     |--------------------------------------------------------------------------
-    | 1️⃣ Get Attendances (worked_minutes stored)
+    | 1️⃣ Fetch Attendance Records (DATE based)
     |--------------------------------------------------------------------------
     */
+
     $attendances = DB::table('attendances')
+        ->select(
+            DB::raw("DATE(created_at) as date"),
+            'actual_minutes'
+        )
         ->where('employee_id', $user->id)
-        ->whereBetween('created_at', [$startDate, $endDate])
+        ->whereYear('created_at', $month->year)
+        ->whereMonth('created_at', $month->month)
         ->get()
-        ->keyBy(function ($item) {
-            return Carbon::parse($item->created_at)->toDateString();
-        });
+        ->keyBy('date');
 
     /*
     |--------------------------------------------------------------------------
-    | 2️⃣ Get Logs (Type Wise In/Out)
+    | 2️⃣ Fetch Logs (Type Wise IN / OUT)
     |--------------------------------------------------------------------------
     */
+
     $logs = DB::table('attendance_logs')
         ->select(
             DB::raw("DATE(created_at) as date"),
@@ -639,7 +641,8 @@ public function employeeMonthlyAttendance(Request $request)
             DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
         )
         ->where('employee_id', $user->id)
-        ->whereBetween('created_at', [$startDate, $endDate])
+        ->whereYear('created_at', $month->year)
+        ->whereMonth('created_at', $month->month)
         ->groupBy(DB::raw("DATE(created_at)"))
         ->get()
         ->keyBy('date');
@@ -649,6 +652,10 @@ public function employeeMonthlyAttendance(Request $request)
     | 3️⃣ Prepare Monthly Data
     |--------------------------------------------------------------------------
     */
+
+    $startDate = $month->copy()->startOfMonth();
+    $endDate   = $month->copy()->endOfMonth();
+
     $present = 0;
     $absent = 0;
     $halfDay = 0;
@@ -662,6 +669,11 @@ public function employeeMonthlyAttendance(Request $request)
     while ($currentDate <= $endDate) {
 
         $dateKey = $currentDate->toDateString();
+
+        // Skip future dates
+        if ($currentDate->isFuture()) {
+            break;
+        }
 
         if (isset($attendances[$dateKey])) {
 
@@ -677,11 +689,16 @@ public function employeeMonthlyAttendance(Request $request)
 
             $hoursWorked = gmdate("H:i", $workedMinutes * 60);
 
-            // Summary logic
+            // Summary Calculation
             if ($workedMinutes >= 480) {
                 $present++;
-            } elseif ($workedMinutes > 0 && $workedMinutes < 480) {
+                $status = 'present';
+            } elseif ($workedMinutes > 0) {
                 $halfDay++;
+                $status = 'half_day';
+            } else {
+                $absent++;
+                $status = 'absent';
             }
 
             if ($workedMinutes > 540) {
@@ -690,18 +707,13 @@ public function employeeMonthlyAttendance(Request $request)
 
             $attendanceList[] = [
                 'date' => $dateKey,
-                'status' => $workedMinutes >= 480 ? 'present' : 'half_day',
+                'status' => $status,
                 'punchIn' => $checkIn ? $checkIn->format('h:i A') : null,
                 'punchOut' => $checkOut ? $checkOut->format('h:i A') : null,
                 'hoursWorked' => $hoursWorked
             ];
 
         } else {
-
-            // Skip future dates
-            if ($currentDate->isFuture()) {
-                break;
-            }
 
             $absent++;
 
@@ -722,6 +734,7 @@ public function employeeMonthlyAttendance(Request $request)
     | 4️⃣ Return Response
     |--------------------------------------------------------------------------
     */
+
     return response()->json([
         'status' => true,
         'month' => $month->format('Y-m'),
