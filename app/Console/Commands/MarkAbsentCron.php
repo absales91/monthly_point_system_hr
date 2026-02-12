@@ -14,8 +14,13 @@ class MarkAbsentCron extends Command
 
     public function handle()
     {
-        $today = Carbon::now('Asia/Kolkata')->toDateString();
+        $now = Carbon::now('Asia/Kolkata');
+        $today = $now->toDateString();
         $officeStart = Carbon::parse($today . ' 10:00:00');
+        if ($now->isSunday()) {
+            $this->info("Today is Sunday. Skipping absent marking.");
+            return;
+        }
 
         $employees = DB::table('users')
             ->where('role', 'employee')

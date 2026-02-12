@@ -13,7 +13,7 @@ Artisan::command('inspire', function () {
 
 
 Schedule::command('attendance:auto-out')
-    ->dailyAt('23:59')
+    ->dailyAt('23:55')
     // ->everyMinute()
 
     ->timezone('Asia/Kolkata');
@@ -25,11 +25,11 @@ Schedule::command('attendance:mark-absent')
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::command('indiamart:fetch-leads')
-    ->everyThirtyMinutes()
-    ->timezone('Asia/Kolkata')
-    ->withoutOverlapping()
-    ->runInBackground();
+// Schedule::command('indiamart:fetch-leads')
+//     ->everyThirtyMinutes()
+//     ->timezone('Asia/Kolkata')
+//     ->withoutOverlapping()
+//     ->runInBackground();
     
 Schedule::command('attendance:reminder')
     ->days([1, 2, 3, 4, 5, 6]) // Mon–Sat
