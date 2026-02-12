@@ -462,4 +462,32 @@ private function calculateTodayAttendance($employeeId)
             'late_minutes_allowed' => 15,
         ];
     }
+
+    public function dailyEmployeeAttendance(Request $request)
+{
+    $request->validate([
+        'date' => 'nullable|date',
+        'employee_id' => 'nullable|exists:employees,id'
+    ]);
+
+    $date = $request->date 
+        ? Carbon::parse($request->date)->toDateString()
+        : Carbon::today()->toDateString();
+
+    $query = Attendance::with('employee')
+        ->whereDate('created_at', $date);
+
+    if ($request->employee_id) {
+        $query->where('employee_id', $request->employee_id);
+    }
+
+    $attendances = $query->get();
+
+    return response()->json([
+        'status' => true,
+        'date' => $date,
+        'total_records' => $attendances->count(),
+        'data' => $attendances
+    ]);
+}
 }
