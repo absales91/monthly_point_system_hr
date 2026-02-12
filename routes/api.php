@@ -65,4 +65,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/delete-account', [AuthController::class, 'deleteAccount']);
 
     Route::get('/attendance/daily', [AttendanceController::class, 'dailyEmployeeAttendance']);
+    Route::get('/attendance/monthly', [AttendanceController::class, 'employeeMonthlyAttendance']);
 });

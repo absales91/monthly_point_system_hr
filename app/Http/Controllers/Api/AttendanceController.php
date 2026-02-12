@@ -7,6 +7,7 @@ use App\Models\Attendance;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class AttendanceController extends Controller
@@ -593,6 +594,145 @@ public function dailyEmployeeAttendance(Request $request)
             'overtime' => $overtime,
         ],
         'staff' => $staff
+    ]);
+}
+
+
+public function employeeMonthlyAttendance(Request $request)
+{
+    $request->validate([
+        'month' => 'nullable|date_format:Y-m',
+        // 'employee_id' => 'nullable|exists:users,id'
+    ]);
+
+    $user = Auth::user(); // Logged in employee
+
+    $month = $request->month
+        ? Carbon::createFromFormat('Y-m', $request->month)
+        : Carbon::now();
+
+    $startDate = $month->copy()->startOfMonth();
+    $endDate   = $month->copy()->endOfMonth();
+
+    /*
+    |--------------------------------------------------------------------------
+    | 1️⃣ Get Attendances (worked_minutes stored)
+    |--------------------------------------------------------------------------
+    */
+    $attendances = DB::table('attendances')
+        ->where('employee_id', $user->id)
+        ->whereBetween('created_at', [$startDate, $endDate])
+        ->get()
+        ->keyBy(function ($item) {
+            return Carbon::parse($item->created_at)->toDateString();
+        });
+
+    /*
+    |--------------------------------------------------------------------------
+    | 2️⃣ Get Logs (Type Wise In/Out)
+    |--------------------------------------------------------------------------
+    */
+    $logs = DB::table('attendance_logs')
+        ->select(
+            DB::raw("DATE(created_at) as date"),
+            DB::raw("MIN(CASE WHEN punch_type = 'in' THEN created_at END) as check_in"),
+            DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
+        )
+        ->where('employee_id', $user->id)
+        ->whereBetween('created_at', [$startDate, $endDate])
+        ->groupBy(DB::raw("DATE(created_at)"))
+        ->get()
+        ->keyBy('date');
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3️⃣ Prepare Monthly Data
+    |--------------------------------------------------------------------------
+    */
+    $present = 0;
+    $absent = 0;
+    $halfDay = 0;
+    $paidLeave = 0;
+    $overtimeDays = 0;
+
+    $attendanceList = [];
+
+    $currentDate = $startDate->copy();
+
+    while ($currentDate <= $endDate) {
+
+        $dateKey = $currentDate->toDateString();
+
+        if (isset($attendances[$dateKey])) {
+
+            $workedMinutes = $attendances[$dateKey]->actual_minutes ?? 0;
+
+            $checkIn = isset($logs[$dateKey]->check_in)
+                ? Carbon::parse($logs[$dateKey]->check_in)
+                : null;
+
+            $checkOut = isset($logs[$dateKey]->check_out)
+                ? Carbon::parse($logs[$dateKey]->check_out)
+                : null;
+
+            $hoursWorked = gmdate("H:i", $workedMinutes * 60);
+
+            // Summary logic
+            if ($workedMinutes >= 480) {
+                $present++;
+            } elseif ($workedMinutes > 0 && $workedMinutes < 480) {
+                $halfDay++;
+            }
+
+            if ($workedMinutes > 540) {
+                $overtimeDays++;
+            }
+
+            $attendanceList[] = [
+                'date' => $dateKey,
+                'status' => $workedMinutes >= 480 ? 'present' : 'half_day',
+                'punchIn' => $checkIn ? $checkIn->format('h:i A') : null,
+                'punchOut' => $checkOut ? $checkOut->format('h:i A') : null,
+                'hoursWorked' => $hoursWorked
+            ];
+
+        } else {
+
+            // Skip future dates
+            if ($currentDate->isFuture()) {
+                break;
+            }
+
+            $absent++;
+
+            $attendanceList[] = [
+                'date' => $dateKey,
+                'status' => 'absent',
+                'punchIn' => null,
+                'punchOut' => null,
+                'hoursWorked' => "00:00"
+            ];
+        }
+
+        $currentDate->addDay();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 4️⃣ Return Response
+    |--------------------------------------------------------------------------
+    */
+    return response()->json([
+        'status' => true,
+        'month' => $month->format('Y-m'),
+        'summary' => [
+            'present' => $present,
+            'absent' => $absent,
+            'half_day' => $halfDay,
+            'paid_leave' => $paidLeave,
+            'overtime_days' => $overtimeDays,
+        ],
+        'attendance' => $attendanceList
     ]);
 }
 
