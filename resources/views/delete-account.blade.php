@@ -100,7 +100,7 @@
 <body>
 
 <div class="card">
-    <h2>Delete Account & Data</h2>
+    <h2>Delete Account & Data – Techon Connect App</h2>
 
     <p>
         You can request deletion of your account and associated data from the Attendance App.
@@ -146,7 +146,7 @@
     </form>
 
     <div class="footer">
-        © {{ date('Y') }} Attendance App
+        © {{ date('Y') }} Techon Connect App
     </div>
 </div>
 
