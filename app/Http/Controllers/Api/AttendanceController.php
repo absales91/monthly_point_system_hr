@@ -495,7 +495,7 @@ public function dailyEmployeeAttendance(Request $request)
     */
     $attendances = DB::table('attendances')
         ->select('employee_id', 'actual_minutes')
-        ->whereDate('created_at', $date)
+        ->whereDate('date', $date)
         ->get()
         ->keyBy('employee_id');
 
