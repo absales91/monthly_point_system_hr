@@ -385,6 +385,7 @@ private function calculateTodayAttendance($employeeId)
             'absent' => $records->where('status', 'absent')->count(),
             'short_leave' => $records->where('status', 'short_leave')->count(),
             'late' => $records->where('status', 'late')->count(),
+            'overtime' => $records->sum('overtime_minutes')  ?? 0 ,
             'total_working_minutes' => $records->sum('working_minutes'),
             'total_overtime_minutes' => $records->sum('overtime_minutes'),
         ];
