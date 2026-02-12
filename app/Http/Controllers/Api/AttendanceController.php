@@ -602,9 +602,16 @@ public function employeeMonthlyAttendance(Request $request)
 {
     $request->validate([
         'month' => 'nullable|date_format:Y-m',
+        'employee_id' => 'nullable|exists:users,id'
     ]);
 
-    $user = Auth::user();
+    $user = User::find($request->employee_id );
+    if (!$user) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Employee not found'
+        ], 404);
+    }
 
     // Selected month or current month
     $month = $request->month
