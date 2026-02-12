@@ -108,7 +108,7 @@
 
     <h4>How to Delete Your Account</h4>
     <ul>
-        <li>Open the Attendance App → Profile → Settings → Delete Account</li>
+        <li>Open the Techon Connect App → Profile → Settings → Delete Account</li>
         <li>OR submit the request using the form below</li>
     </ul>
 
