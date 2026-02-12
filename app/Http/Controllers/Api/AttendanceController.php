@@ -529,7 +529,7 @@ public function dailyEmployeeAttendance(Request $request)
 
     foreach ($employees as $employee) {
 
-        if (isset($attendances[$employee->id])) {
+        if (isset($attendances[$employee->id]) && $attendances[$employee->id]->status !== 'absent') {
 
             $present++;
 
