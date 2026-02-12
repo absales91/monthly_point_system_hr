@@ -114,6 +114,6 @@
             @endforelse
 
         </div>
-<livewire:attendance-admin />
+
     </div>
 </x-app-layout>
