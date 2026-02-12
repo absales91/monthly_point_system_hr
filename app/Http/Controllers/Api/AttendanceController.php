@@ -475,9 +475,12 @@ public function dailyEmployeeAttendance(Request $request)
         ? Carbon::parse($request->date)->toDateString()
         : Carbon::today()->toDateString();
 
-    // Base employee query
-    $employeesQuery = DB::table('users')
-        ->where('role', 'employee');
+    /*
+    |--------------------------------------------------------------------------
+    | 1️⃣ Get Employees
+    |--------------------------------------------------------------------------
+    */
+    $employeesQuery = User::where('role', 'employee');
 
     if ($request->employee_id) {
         $employeesQuery->where('id', $request->employee_id);
@@ -485,18 +488,38 @@ public function dailyEmployeeAttendance(Request $request)
 
     $employees = $employeesQuery->get();
 
-    // Fetch logs grouped (MIN = checkin, MAX = checkout)
+    /*
+    |--------------------------------------------------------------------------
+    | 2️⃣ Get Worked Minutes from Attendances Table
+    |--------------------------------------------------------------------------
+    */
+    $attendances = DB::table('attendances')
+        ->select('employee_id', 'worked_minutes')
+        ->whereDate('created_at', $date)
+        ->get()
+        ->keyBy('employee_id');
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3️⃣ Get Check-in & Check-out from Logs Table (Type Wise)
+    |--------------------------------------------------------------------------
+    */
     $logs = DB::table('attendance_logs')
         ->select(
             'employee_id',
-             DB::raw("MIN(CASE WHEN punch_type = 'in' THEN created_at END) as check_in"),
-        DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
+            DB::raw("MIN(CASE WHEN type = 'in' THEN created_at END) as check_in"),
+            DB::raw("MAX(CASE WHEN type = 'out' THEN created_at END) as check_out")
         )
         ->whereDate('created_at', $date)
         ->groupBy('employee_id')
         ->get()
         ->keyBy('employee_id');
 
+    /*
+    |--------------------------------------------------------------------------
+    | 4️⃣ Prepare Summary
+    |--------------------------------------------------------------------------
+    */
     $present = 0;
     $absent = 0;
     $lessHours = 0;
@@ -506,31 +529,34 @@ public function dailyEmployeeAttendance(Request $request)
 
     foreach ($employees as $employee) {
 
-        if (isset($logs[$employee->id])) {
+        if (isset($attendances[$employee->id])) {
 
             $present++;
 
-            $checkIn = Carbon::parse($logs[$employee->id]->check_in);
-            $checkOut = $logs[$employee->id]->check_in != $logs[$employee->id]->check_out
+            $workedMinutes = $attendances[$employee->id]->worked_minutes ?? 0;
+
+            $checkIn = isset($logs[$employee->id]->check_in)
+                ? Carbon::parse($logs[$employee->id]->check_in)
+                : null;
+
+            $checkOut = isset($logs[$employee->id]->check_out)
                 ? Carbon::parse($logs[$employee->id]->check_out)
                 : null;
 
-            $workingMinutes = 0;
+            // Convert minutes to HH:MM format
+            $hoursWorked = gmdate("H:i", $workedMinutes * 60);
 
-            if ($checkOut) {
-                $workingMinutes = $checkOut->diffInMinutes($checkIn);
-            }
+            // Less Hours (< 8 hours)
+            if ($workedMinutes < 480) $lessHours++;
 
-            $hoursWorked = gmdate("H:i", $workingMinutes * 60);
-
-            if ($workingMinutes < 480) $lessHours++;
-            if ($workingMinutes > 540) $overtime++;
+            // Overtime (> 9 hours)
+            if ($workedMinutes > 540) $overtime++;
 
             $staff[] = [
                 'id' => $employee->id,
                 'name' => $employee->name,
                 'status' => $checkOut ? 'completed' : 'punchedIn',
-                'punchIn' => $checkIn->format('h:i A'),
+                'punchIn' => $checkIn ? $checkIn->format('h:i A') : null,
                 'punchOut' => $checkOut ? $checkOut->format('h:i A') : null,
                 'hoursWorked' => $hoursWorked
             ];
@@ -550,6 +576,11 @@ public function dailyEmployeeAttendance(Request $request)
         }
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | 5️⃣ Return Response (Flutter Compatible)
+    |--------------------------------------------------------------------------
+    */
     return response()->json([
         'status' => true,
         'date' => $date,
