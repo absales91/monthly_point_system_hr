@@ -555,7 +555,7 @@ public function dailyEmployeeAttendance(Request $request)
             $staff[] = [
                 'id' => $employee->id,
                 'name' => $employee->name,
-                'status' => $checkOut ? 'completed' : 'punchedIn',
+                'status' => $attendances[$employee->id]->status,
                 'punchIn' => $checkIn ? $checkIn->format('h:i A') : null,
                 'punchOut' => $checkOut ? $checkOut->format('h:i A') : null,
                 'hoursWorked' => $hoursWorked
