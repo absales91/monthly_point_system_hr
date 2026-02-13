@@ -642,7 +642,7 @@ class AttendanceController extends Controller
 
         $attendances = DB::table('attendances')
             ->select(
-                DB::raw("DATE(created_at) as date"),
+                DB::raw("DATE(date) as date"),
                 'actual_minutes',
                 'status'
             )
