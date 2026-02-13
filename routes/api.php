@@ -66,5 +66,5 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/attendance/daily', [AttendanceController::class, 'dailyEmployeeAttendance']);
     Route::get('/attendance/monthly', [AttendanceController::class, 'employeeMonthlyAttendance']);
-    Route::get('/mark-manual-attendance', [AttendanceController::class, 'markManualAttendance']);
+    Route::post('/mark-manual-attendance', [AttendanceController::class, 'markManualAttendance']);
 });
