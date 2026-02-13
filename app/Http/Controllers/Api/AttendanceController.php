@@ -795,7 +795,7 @@ class AttendanceController extends Controller
     public function markManualAttendance(Request $request)
     {
         $request->validate([
-            'employee_id' => 'required|exists:employees,id',
+            'employee_id' => 'required|exists:users,id',
             'date' => 'required|date',
             'status' => 'required|in:present,absent,half_day,paid_leave'
         ]);
