@@ -647,7 +647,7 @@ class AttendanceController extends Controller
                 'status'
             )
             ->where('employee_id', $user->id)
-            ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereBetween('date', [$startDate, $endDate])
             ->get()
             ->keyBy('date');
 
@@ -847,6 +847,7 @@ class AttendanceController extends Controller
                     'working_minutes' => $workingMinutes,
                     'actual_minutes' => $actualMinutes,
                     'overtime_minutes' => 0,
+                    'created_at' => $date
 
 
                 ]
