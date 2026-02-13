@@ -598,196 +598,275 @@ class AttendanceController extends Controller
 
 
     public function employeeMonthlyAttendance(Request $request)
-{
-    $request->validate([
-        'month' => 'nullable|date_format:Y-m',
-        'employee_id' => 'required|exists:users,id'
-    ]);
+    {
+        $request->validate([
+            'month' => 'nullable|date_format:Y-m',
+            'employee_id' => 'required|exists:users,id'
+        ]);
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | 1️⃣ Get Employee
     |--------------------------------------------------------------------------
     */
 
-    $user = User::where('id', $request->employee_id)
-        ->where('role', 'employee')
-        ->first();
+        $user = User::where('id', $request->employee_id)
+            ->where('role', 'employee')
+            ->first();
 
-    if (!$user) {
-        return response()->json([
-            'status' => false,
-            'message' => 'Employee not found'
-        ], 404);
-    }
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Employee not found'
+            ], 404);
+        }
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | 2️⃣ Prepare Month Range
     |--------------------------------------------------------------------------
     */
 
-    $month = $request->month
-        ? Carbon::createFromFormat('Y-m', $request->month)
-        : Carbon::now();
+        $month = $request->month
+            ? Carbon::createFromFormat('Y-m', $request->month)
+            : Carbon::now();
 
-    $startDate = $month->copy()->startOfMonth()->startOfDay();
-    $endDate   = $month->copy()->endOfMonth()->endOfDay();
+        $startDate = $month->copy()->startOfMonth()->startOfDay();
+        $endDate   = $month->copy()->endOfMonth()->endOfDay();
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | 3️⃣ Fetch Attendance Records
     |--------------------------------------------------------------------------
     */
 
-    $attendances = DB::table('attendances')
-        ->select(
-            DB::raw("DATE(created_at) as date"),
-            'actual_minutes',
-            'status'
-        )
-        ->where('employee_id', $user->id)
-        ->whereBetween('created_at', [$startDate, $endDate])
-        ->get()
-        ->keyBy('date');
+        $attendances = DB::table('attendances')
+            ->select(
+                DB::raw("DATE(created_at) as date"),
+                'actual_minutes',
+                'status'
+            )
+            ->where('employee_id', $user->id)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->get()
+            ->keyBy('date');
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | 4️⃣ Fetch Logs (Type Wise IN / OUT)
     |--------------------------------------------------------------------------
     */
 
-    $logs = DB::table('attendance_logs')
-        ->select(
-            DB::raw("DATE(created_at) as date"),
-            DB::raw("MIN(CASE WHEN punch_type = 'in' THEN created_at END) as check_in"),
-            DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
-        )
-        ->where('employee_id', $user->id)
-        ->whereBetween('created_at', [$startDate, $endDate])
-        ->groupBy(DB::raw("DATE(created_at)"))
-        ->get()
-        ->keyBy('date');
+        $logs = DB::table('attendance_logs')
+            ->select(
+                DB::raw("DATE(created_at) as date"),
+                DB::raw("MIN(CASE WHEN punch_type = 'in' THEN created_at END) as check_in"),
+                DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
+            )
+            ->where('employee_id', $user->id)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->groupBy(DB::raw("DATE(created_at)"))
+            ->get()
+            ->keyBy('date');
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | 5️⃣ Prepare Monthly Summary
     |--------------------------------------------------------------------------
     */
 
-    $present = 0;
-    $absent = 0;
-    $halfDay = 0;
-    $shortLeave = 0;
-    $paidLeave = 0;
-    $overtimeDays = 0;
+        $present = 0;
+        $absent = 0;
+        $halfDay = 0;
+        $shortLeave = 0;
+        $paidLeave = 0;
+        $overtimeDays = 0;
 
-    $attendanceList = [];
+        $attendanceList = [];
 
-    $currentDate = $month->copy()->startOfMonth();
+        $currentDate = $month->copy()->startOfMonth();
 
-    while ($currentDate <= $month->copy()->endOfMonth()) {
+        while ($currentDate <= $month->copy()->endOfMonth()) {
 
-        if ($currentDate->isFuture()) {
-            break;
-        }
-
-        $dateKey = $currentDate->toDateString();
-         if ($currentDate->isSunday()) {
-
-        $attendanceList[] = [
-            'date' => $dateKey,
-            'status' => 'holiday',
-            'punchIn' => null,
-            'punchOut' => null,
-            'hoursWorked' => "00:00"
-        ];
-
-        $currentDate->addDay();
-        continue;
-    }
-
-        if (isset($attendances[$dateKey])) {
-
-            $workedMinutes = $attendances[$dateKey]->actual_minutes ?? 0;
-            $status = $attendances[$dateKey]->status ?? 'absent';
-
-            $checkIn = isset($logs[$dateKey]->check_in)
-                ? Carbon::parse($logs[$dateKey]->check_in)
-                : null;
-
-            $checkOut = isset($logs[$dateKey]->check_out)
-                ? Carbon::parse($logs[$dateKey]->check_out)
-                : null;
-
-            $hoursWorked = gmdate("H:i", $workedMinutes * 60);
-
-            // Count Summary
-            switch ($status) {
-                case 'present':
-                    $present++;
-                    break;
-
-                case 'half_day':
-                    $halfDay++;
-                    break;
-
-                case 'short_leave':
-                    $shortLeave++;
-                    break;
-
-                case 'paid_leave':
-                    $paidLeave++;
-                    break;
-
-                default:
-                    $absent++;
+            if ($currentDate->isFuture()) {
+                break;
             }
 
-            if ($workedMinutes > 540) {
-                $overtimeDays++;
+            $dateKey = $currentDate->toDateString();
+            if ($currentDate->isSunday()) {
+
+                $attendanceList[] = [
+                    'date' => $dateKey,
+                    'status' => 'holiday',
+                    'punchIn' => null,
+                    'punchOut' => null,
+                    'hoursWorked' => "00:00"
+                ];
+
+                $currentDate->addDay();
+                continue;
             }
 
-        } else {
+            if (isset($attendances[$dateKey])) {
 
-            $status = 'absent';
-            $workedMinutes = 0;
-            $checkIn = null;
-            $checkOut = null;
-            $hoursWorked = "00:00";
+                $workedMinutes = $attendances[$dateKey]->actual_minutes ?? 0;
+                $status = $attendances[$dateKey]->status ?? 'absent';
 
-            $absent++;
+                $checkIn = isset($logs[$dateKey]->check_in)
+                    ? Carbon::parse($logs[$dateKey]->check_in)
+                    : null;
+
+                $checkOut = isset($logs[$dateKey]->check_out)
+                    ? Carbon::parse($logs[$dateKey]->check_out)
+                    : null;
+
+                $hoursWorked = gmdate("H:i", $workedMinutes * 60);
+
+                // Count Summary
+                switch ($status) {
+                    case 'present':
+                        $present++;
+                        break;
+
+                    case 'half_day':
+                        $halfDay++;
+                        break;
+
+                    case 'short_leave':
+                        $shortLeave++;
+                        break;
+
+                    case 'paid_leave':
+                        $paidLeave++;
+                        break;
+
+                    default:
+                        $absent++;
+                }
+
+                if ($workedMinutes > 540) {
+                    $overtimeDays++;
+                }
+            } else {
+
+                $status = 'absent';
+                $workedMinutes = 0;
+                $checkIn = null;
+                $checkOut = null;
+                $hoursWorked = "00:00";
+
+                $absent++;
+            }
+
+            $attendanceList[] = [
+                'date' => $dateKey,
+                'status' => $status,
+                'punchIn' => $checkIn ? $checkIn->format('h:i A') : null,
+                'punchOut' => $checkOut ? $checkOut->format('h:i A') : null,
+                'hoursWorked' => $hoursWorked
+            ];
+
+            $currentDate->addDay();
         }
 
-        $attendanceList[] = [
-            'date' => $dateKey,
-            'status' => $status,
-            'punchIn' => $checkIn ? $checkIn->format('h:i A') : null,
-            'punchOut' => $checkOut ? $checkOut->format('h:i A') : null,
-            'hoursWorked' => $hoursWorked
-        ];
-
-        $currentDate->addDay();
-    }
-
-    /*
+        /*
     |--------------------------------------------------------------------------
     | 6️⃣ Return Response
     |--------------------------------------------------------------------------
     */
 
-    return response()->json([
-        'status' => true,
-        'month' => $month->format('Y-m'),
-        'summary' => [
-            'present' => $present,
-            'absent' => $absent,
-            'half_day' => $halfDay,
-            'short_leave' => $shortLeave,
-            'paid_leave' => $paidLeave,
-            'overtime_days' => $overtimeDays,
-        ],
-        'attendance' => $attendanceList
-    ]);
-}
+        return response()->json([
+            'status' => true,
+            'month' => $month->format('Y-m'),
+            'summary' => [
+                'present' => $present,
+                'absent' => $absent,
+                'half_day' => $halfDay,
+                'short_leave' => $shortLeave,
+                'paid_leave' => $paidLeave,
+                'overtime_days' => $overtimeDays,
+            ],
+            'attendance' => $attendanceList
+        ]);
+    }
+
+
+
+    public function markManualAttendance(Request $request)
+    {
+        $request->validate([
+            'employee_id' => 'required|exists:employees,id',
+            'date' => 'required|date',
+            'status' => 'required|in:present,absent,half_day,paid_leave'
+        ]);
+
+        $date = Carbon::parse($request->date);
+
+        // 🚫 Prevent future marking
+        if ($date->isFuture()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot mark future attendance.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+
+            // 🎯 Calculate minutes based on status
+            $workingMinutes = 0;
+            $actualMinutes = 0;
+
+            if ($request->status === 'present') {
+                $workingMinutes = 480;      // 8 hours
+                $actualMinutes = 480;
+            }
+
+            if ($request->status === 'half_day') {
+                $workingMinutes = 240;      // 4 hours
+                $actualMinutes = 240;
+            }
+
+            // ❌ Absent / Paid Leave = 0 minutes
+            $start = $date->startOfDay();
+            $end   = $date->copy()->endOfDay();
+
+            DB::table('attendance_logs')
+                ->where('employee_id', $request->employee_id)
+                ->whereBetween('created_at', [$start, $end])
+                ->delete();
+
+            $attendance = Attendance::updateOrCreate(
+                [
+                    'employee_id' => $request->employee_id,
+                    'date' => $date->toDateString(),
+                ],
+                [
+                    'status' => $request->status,
+                    'working_minutes' => $workingMinutes,
+                    'actual_minutes' => $actualMinutes,
+                    'overtime_minutes' => 0,
+
+
+                ]
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Attendance updated successfully',
+                'data' => $attendance
+            ]);
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update attendance'
+            ], 500);
+        }
+    }
 }
