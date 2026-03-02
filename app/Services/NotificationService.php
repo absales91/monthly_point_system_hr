@@ -32,7 +32,7 @@ class NotificationService
         ]);
 
         // 2️⃣ Send FCM push notification
-        if (!empty($user->fcm_token)) {
+        if (!empty($user->fcm_token) || $user->fcm_token !== null) {
 
             $message = [
                 'token' => $user->fcm_token,
