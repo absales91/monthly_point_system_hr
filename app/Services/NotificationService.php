@@ -10,7 +10,7 @@ class NotificationService
     protected static function messaging()
     {
         return (new Factory)
-            ->withServiceAccount(storage_path('app/firebase.json'))
+            ->withServiceAccount(public_path('../storage/app/firebase.json'))
             ->createMessaging();
     }
 
@@ -42,7 +42,7 @@ class NotificationService
                 ],
                 'data' => [
                     'type' => $type,
-                    'reference_id' => (string) $referenceId,
+                    'reference_id' => (string) $referenceId ?? '',
                 ],
             ];
 
