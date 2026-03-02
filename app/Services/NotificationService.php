@@ -4,13 +4,14 @@ namespace App\Services;
 
 use App\Models\Notification;
 use Kreait\Firebase\Factory;
+use Illuminate\Support\Facades\Log;
 
 class NotificationService
 {
     protected static function messaging()
     {
         return (new Factory)
-            ->withServiceAccount(public_path('../storage/app/firebase.json'))
+            ->withServiceAccount(base_path('storage/app/firebase.json'))
             ->createMessaging();
     }
 
@@ -21,9 +22,8 @@ class NotificationService
         string $type,
         $referenceId = null
     ) {
-        // 1️⃣ Save notification in DB (in-app history)
         Notification::create([
-            'employee_id' => $user->id,   // 🔥 FIXED
+            'employee_id' => $user->id,
             'title' => $title,
             'body' => $body,
             'type' => $type,
@@ -31,22 +31,31 @@ class NotificationService
             'is_read' => false,
         ]);
 
-        // 2️⃣ Send FCM push notification
-        if (!empty($user->fcm_token) || $user->fcm_token !== null) {
+        if (!empty($user->fcm_token)) {
+           
 
-            $message = [
-                'token' => $user->fcm_token,
-                'notification' => [
-                    'title' => $title,
-                    'body' => $body,
-                ],
-                'data' => [
-                    'type' => $type,
-                    'reference_id' => (string) $referenceId ?? '',
-                ],
-            ];
 
-            self::messaging()->send($message);
+            try {
+
+                $message = [
+                    'token' => $user->fcm_token,
+                    'notification' => [
+                        'title' => $title,
+                        'body' => $body,
+                    ],
+                    'data' => [
+                        'type' => $type,
+                        'reference_id' => (string) ($referenceId ?? ''),
+                    ],
+                ];
+
+                self::messaging()->send($message);
+
+            } catch (\Exception $e) {
+
+                Log::error('FCM Error: '.$e->getMessage());
+
+            }
         }
     }
 }
