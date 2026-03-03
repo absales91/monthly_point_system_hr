@@ -48,7 +48,7 @@ class GenerateSalaryModal extends Component
         $weeklyOff   = 4; // example
 
         // ---- Salary Calculation (basic example) ----
-        $monthlySalary = $staff->salary ?? 13000;
+        $monthlySalary = $staff->basic_salary ?? 13000;
 
         $perDay = $monthlySalary / $end->daysInMonth;
         $earned = $presentDays * $perDay;
