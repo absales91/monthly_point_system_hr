@@ -13,24 +13,20 @@ class AutoOutPunchCron extends Command
 
     public function handle()
     {
-        $now = Carbon::now('Asia/Kolkata');
-        $today = $now->toDateString(); // 11:55 PM execution
+        $timezone = 'Asia/Kolkata';
+        $now = Carbon::now($timezone);
+        $today = $now->toDateString();
 
         /*
         |--------------------------------------------------------------------------
-        | Get employees whose last punch is IN today
+        | Get all employees who punched today (IST safe)
         |--------------------------------------------------------------------------
         */
 
         $employees = DB::table('attendance_logs')
             ->select('employee_id')
-            ->whereDate('created_at', $today)
+            ->whereDate(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), $today)
             ->groupBy('employee_id')
-            ->havingRaw("
-                MAX(CASE WHEN punch_type = 'in' THEN created_at END) >
-                MAX(CASE WHEN punch_type = 'out' THEN created_at END)
-                OR MAX(CASE WHEN punch_type = 'out' THEN created_at END) IS NULL
-            ")
             ->pluck('employee_id');
 
         foreach ($employees as $employeeId) {
@@ -40,71 +36,79 @@ class AutoOutPunchCron extends Command
                 ->where('role', 'employee')
                 ->first();
 
-            if (!$employee) continue;
+            if (!$employee) {
+                continue;
+            }
 
-            // Determine office out time
-            $officeOutTime = $employee->office_out_time 
-                ?? $this->getOfficeDefaults()['office_out'];
+            /*
+            |--------------------------------------------------------------------------
+            | Get Office Timing (User table → fallback to default)
+            |--------------------------------------------------------------------------
+            */
 
-            $officeOut = Carbon::parse(
-                $today . ' ' . $officeOutTime,
-                'Asia/Kolkata'
-            );
+            $defaults = $this->getOfficeDefaults();
 
-            DB::transaction(function () use ($employeeId, $today, $officeOut) {
+            $officeInTime  = $employee->office_in_time  ?: $defaults['office_in'];
+            $officeOutTime = $employee->office_out_time ?: $defaults['office_out'];
+            $lateAllowed   = $employee->late_minutes_allowed ?? $defaults['late_minutes_allowed'];
+            $halfDayHours  = $employee->half_day_hours ?? $defaults['half_day_hours'];
 
-                /*
-                |--------------------------------------------------------------------------
-                | 1️⃣ Get Last Punch
-                |--------------------------------------------------------------------------
-                */
-
-                $lastPunch = DB::table('attendance_logs')
-                    ->where('employee_id', $employeeId)
-                    ->whereDate('created_at', $today)
-                    ->orderByDesc('created_at')
-                    ->first();
-
-                if (!$lastPunch || $lastPunch->punch_type !== 'in') {
-                    return;
-                }
-
-                $lastInTime = Carbon::parse($lastPunch->created_at);
-
-                // SAFETY: Prevent OUT earlier than IN
-                if ($officeOut->lessThanOrEqualTo($lastInTime)) {
-                    return;
-                }
+            DB::transaction(function () use (
+                $employeeId,
+                $today,
+                $now,
+                $timezone,
+                $officeInTime,
+                $officeOutTime,
+                $lateAllowed,
+                $halfDayHours
+            ) {
 
                 /*
                 |--------------------------------------------------------------------------
-                | 2️⃣ Insert Auto OUT
-                |--------------------------------------------------------------------------
-                */
-
-                DB::table('attendance_logs')->insert([
-                    'employee_id' => $employeeId,
-                    'date'        => $today,
-                    'punch_type'  => 'out',
-                    'created_at'  => $officeOut,
-                    'updated_at'  => $officeOut,
-                ]);
-
-                /*
-                |--------------------------------------------------------------------------
-                | 3️⃣ Fetch All Logs Again (Sorted)
+                | Fetch Logs (IST Safe)
                 |--------------------------------------------------------------------------
                 */
 
                 $logs = DB::table('attendance_logs')
                     ->where('employee_id', $employeeId)
-                    ->whereDate('created_at', $today)
+                    ->whereDate(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), $today)
                     ->orderBy('created_at')
                     ->get();
 
+                if ($logs->isEmpty()) {
+                    return;
+                }
+
                 /*
                 |--------------------------------------------------------------------------
-                | 4️⃣ Safe Working Minutes Calculation
+                | If last punch is IN → Auto OUT at current time
+                |--------------------------------------------------------------------------
+                */
+
+                $lastLog = $logs->last();
+
+                if ($lastLog->punch_type === 'in') {
+
+                    DB::table('attendance_logs')->insert([
+                        'employee_id' => $employeeId,
+                        'date'        => $today,
+                        'punch_type'  => 'out',
+                        'created_at'  => $now,
+                        'updated_at'  => $now,
+                    ]);
+
+                    // Re-fetch logs
+                    $logs = DB::table('attendance_logs')
+                        ->where('employee_id', $employeeId)
+                        ->whereDate(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), $today)
+                        ->orderBy('created_at')
+                        ->get();
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Calculate Working Minutes
                 |--------------------------------------------------------------------------
                 */
 
@@ -113,40 +117,63 @@ class AutoOutPunchCron extends Command
 
                 foreach ($logs as $log) {
 
+                    $logTime = Carbon::parse($log->created_at)->timezone($timezone);
+
                     if ($log->punch_type === 'in') {
 
                         if (!$lastIn) {
-                            $lastIn = Carbon::parse($log->created_at);
+                            $lastIn = $logTime;
                         }
 
                     } elseif ($log->punch_type === 'out') {
 
-                        if ($lastIn) {
-
-                            $outTime = Carbon::parse($log->created_at);
-
-                            // Extra safety: only calculate if OUT > IN
-                            if ($outTime->greaterThan($lastIn)) {
-                                $workedMinutes += $outTime->diffInMinutes($lastIn);
-                            }
-
+                        if ($lastIn && $logTime->greaterThan($lastIn)) {
+                            $workedMinutes += $logTime->diffInMinutes($lastIn);
                             $lastIn = null;
                         }
                     }
                 }
 
-                // Final protection
+                // Extra safety
+                if ($lastIn) {
+                    $workedMinutes += $now->diffInMinutes($lastIn);
+                }
+
                 $workedMinutes = max(0, $workedMinutes);
 
                 /*
                 |--------------------------------------------------------------------------
-                | 5️⃣ Determine Status
+                | Late Detection
                 |--------------------------------------------------------------------------
                 */
 
+                $officeIn = Carbon::parse($today . ' ' . $officeInTime, $timezone);
+                $firstInLog = $logs->firstWhere('punch_type', 'in');
+
+                $isLate = false;
+                $lateMinutes = 0;
+
+                if ($firstInLog) {
+
+                    $firstInTime = Carbon::parse($firstInLog->created_at)->timezone($timezone);
+
+                    if ($firstInTime->greaterThan($officeIn->copy()->addMinutes($lateAllowed))) {
+                        $isLate = true;
+                        $lateMinutes = $firstInTime->diffInMinutes($officeIn);
+                    }
+                }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Determine Status
+                |--------------------------------------------------------------------------
+                */
+
+                $halfDayMinutes = $halfDayHours * 60;
+
                 if ($workedMinutes >= 480) {
                     $status = 'present';
-                } elseif ($workedMinutes >= 240) {
+                } elseif ($workedMinutes >= $halfDayMinutes) {
                     $status = 'half_day';
                 } else {
                     $status = 'absent';
@@ -154,20 +181,22 @@ class AutoOutPunchCron extends Command
 
                 /*
                 |--------------------------------------------------------------------------
-                | 6️⃣ Update Attendance Table
+                | Save Attendance
                 |--------------------------------------------------------------------------
                 */
 
                 DB::table('attendances')->updateOrInsert(
                     [
                         'employee_id' => $employeeId,
-                        'date' => $today
+                        'date'        => $today
                     ],
                     [
-                        'actual_minutes' => $workedMinutes,
+                        'actual_minutes'  => $workedMinutes,
                         'working_minutes' => $workedMinutes,
-                        'status' => $status,
-                        'updated_at' => now()
+                        'status'          => $status,
+                        'is_late'         => $isLate ? 1 : 0,
+                        'late_minutes'    => $lateMinutes,
+                        'updated_at'      => now()
                     ]
                 );
             });
