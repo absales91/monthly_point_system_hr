@@ -59,7 +59,7 @@ class DashboardController extends Controller
     $salary =
         ($present * $perDaySalary) +
         ($halfDay * ($perDaySalary / 2)) +
-        ($late * ($perDaySalary / 2));
+        ($late * ($perDaySalary ));
 
     // 📌 Today attendance status
     $todayAttendance = Attendance::where('employee_id', $user->id)
