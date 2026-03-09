@@ -26,6 +26,12 @@ class DashboardController extends Controller
         ->whereYear('date', $year)
         ->where('status', 'present')
         ->count();
+    // late
+    $late = Attendance::where('employee_id', $user->id)
+        ->whereMonth('date', $month)
+        ->whereYear('date', $year)
+        ->where('status', 'late')
+        ->count();
 
     $halfDay = Attendance::where('employee_id', $user->id)
         ->whereMonth('date', $month)
@@ -52,7 +58,8 @@ class DashboardController extends Controller
     // 💵 Salary calculation (policy-based)
     $salary =
         ($present * $perDaySalary) +
-        ($halfDay * ($perDaySalary / 2));
+        ($halfDay * ($perDaySalary / 2)) +
+        ($late * ($perDaySalary / 2));
 
     // 📌 Today attendance status
     $todayAttendance = Attendance::where('employee_id', $user->id)

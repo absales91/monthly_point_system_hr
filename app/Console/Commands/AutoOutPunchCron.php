@@ -195,7 +195,7 @@ class AutoOutPunchCron extends Command
                         'working_minutes' => $workedMinutes,
                         'status'          => $status,
                         'is_late'         => $isLate ? 1 : 0,
-                        'late_minutes'    => $lateMinutes,
+                        'late_minutes'    => $status == 'absent'  ? 0 :$lateMinutes,
                         'updated_at'      => now()
                     ]
                 );
