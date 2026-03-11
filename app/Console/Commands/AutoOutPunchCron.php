@@ -13,20 +13,27 @@ class AutoOutPunchCron extends Command
 
     public function handle()
     {
+
         $timezone = 'Asia/Kolkata';
         $now = Carbon::now($timezone);
         $today = $now->toDateString();
 
         /*
         |--------------------------------------------------------------------------
-        | Get all employees who punched today (IST safe)
+        | Get employees whose LAST punch is IN
         |--------------------------------------------------------------------------
         */
 
-        $employees = DB::table('attendance_logs')
-            ->select('employee_id')
-            ->whereDate(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), $today)
-            ->groupBy('employee_id')
+        $employees = DB::table('attendance_logs as a1')
+            ->select('a1.employee_id')
+            ->whereDate(DB::raw("CONVERT_TZ(a1.created_at,'+00:00','+05:30')"), $today)
+            ->whereRaw('a1.id = (
+                SELECT id FROM attendance_logs
+                WHERE employee_id = a1.employee_id
+                ORDER BY created_at DESC
+                LIMIT 1
+            )')
+            ->where('a1.punch_type', 'in')
             ->pluck('employee_id');
 
         foreach ($employees as $employeeId) {
@@ -39,12 +46,6 @@ class AutoOutPunchCron extends Command
             if (!$employee) {
                 continue;
             }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Get Office Timing (User table → fallback to default)
-            |--------------------------------------------------------------------------
-            */
 
             $defaults = $this->getOfficeDefaults();
 
@@ -66,7 +67,7 @@ class AutoOutPunchCron extends Command
 
                 /*
                 |--------------------------------------------------------------------------
-                | Fetch Logs (IST Safe)
+                | Fetch today's logs
                 |--------------------------------------------------------------------------
                 */
 
@@ -82,11 +83,13 @@ class AutoOutPunchCron extends Command
 
                 /*
                 |--------------------------------------------------------------------------
-                | If last punch is IN → Auto OUT at current time
+                | Auto OUT Punch
                 |--------------------------------------------------------------------------
                 */
 
                 $lastLog = $logs->last();
+                $outTime = Carbon::parse($today . ' ' . $officeOutTime, $timezone);
+
 
                 if ($lastLog->punch_type === 'in') {
 
@@ -94,11 +97,10 @@ class AutoOutPunchCron extends Command
                         'employee_id' => $employeeId,
                         'date'        => $today,
                         'punch_type'  => 'out',
-                        'created_at'  => $now,
-                        'updated_at'  => $now,
+                        'created_at'  => $outTime,
+                        'updated_at'  => $outTime,
                     ]);
 
-                    // Re-fetch logs
                     $logs = DB::table('attendance_logs')
                         ->where('employee_id', $employeeId)
                         ->whereDate(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), $today)
@@ -134,7 +136,6 @@ class AutoOutPunchCron extends Command
                     }
                 }
 
-                // Extra safety
                 if ($lastIn) {
                     $workedMinutes += $now->diffInMinutes($lastIn);
                 }
@@ -148,6 +149,7 @@ class AutoOutPunchCron extends Command
                 */
 
                 $officeIn = Carbon::parse($today . ' ' . $officeInTime, $timezone);
+
                 $firstInLog = $logs->firstWhere('punch_type', 'in');
 
                 $isLate = false;
@@ -158,6 +160,7 @@ class AutoOutPunchCron extends Command
                     $firstInTime = Carbon::parse($firstInLog->created_at)->timezone($timezone);
 
                     if ($firstInTime->greaterThan($officeIn->copy()->addMinutes($lateAllowed))) {
+
                         $isLate = true;
                         $lateMinutes = $firstInTime->diffInMinutes($officeIn);
                     }
@@ -165,17 +168,22 @@ class AutoOutPunchCron extends Command
 
                 /*
                 |--------------------------------------------------------------------------
-                | Determine Status
+                | Attendance Status
                 |--------------------------------------------------------------------------
                 */
 
                 $halfDayMinutes = $halfDayHours * 60;
 
                 if ($workedMinutes >= 480) {
+
                     $status = 'present';
+
                 } elseif ($workedMinutes >= $halfDayMinutes) {
+
                     $status = 'half_day';
+
                 } else {
+
                     $status = 'absent';
                 }
 
@@ -188,26 +196,26 @@ class AutoOutPunchCron extends Command
                 DB::table('attendances')->updateOrInsert(
                     [
                         'employee_id' => $employeeId,
-                        'date'        => $today
+                        'date' => $today
                     ],
                     [
-                        'actual_minutes'  => $workedMinutes,
+                        'actual_minutes' => $workedMinutes,
                         'working_minutes' => $workedMinutes,
-                        'status'          => $status,
-                        'is_late'         => $isLate ? 1 : 0,
-                        'late_minutes'    => $status == 'absent'  ? 0 :$lateMinutes,
-                        'updated_at'      => now()
+                        'status' => $status,
+                        'is_late' => $isLate ? 1 : 0,
+                        'late_minutes' => $status == 'absent' ? 0 : $lateMinutes,
+                        'updated_at' => now()
                     ]
                 );
             });
         }
 
-        $this->info("Auto OUT + Attendance Update completed for {$today}");
+        $this->info("Auto OUT completed for {$today}");
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Default Office Timing
+    | Default Office Settings
     |--------------------------------------------------------------------------
     */
 

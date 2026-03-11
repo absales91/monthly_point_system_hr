@@ -66,7 +66,7 @@ class AttendanceController extends Controller
         $recentPunch = DB::table('attendance_logs')
             ->where('employee_id', $employeeId)
             ->where('punch_type', $request->type)
-            ->where('created_at', '>=', now()->subSeconds(10))
+            ->where('created_at', '>=', $now->copy()->subSeconds(10))
             ->exists();
 
         if ($recentPunch) {
@@ -293,11 +293,16 @@ class AttendanceController extends Controller
         $inTime = null;
 
         foreach ($logs as $log) {
+
             if ($log->punch_type === 'in') {
-                $inTime = Carbon::parse($log->created_at);
+
+                if (!$inTime) {
+                    $inTime = Carbon::parse($log->created_at);
+                }
             }
 
             if ($log->punch_type === 'out' && $inTime) {
+
                 $outTime = Carbon::parse($log->created_at);
 
                 if ($outTime->greaterThanOrEqualTo($inTime)) {
@@ -308,12 +313,14 @@ class AttendanceController extends Controller
             }
         }
 
-        // If still IN without OUT
         if ($inTime) {
+
             $outTime = Carbon::now('Asia/Kolkata');
+
             if ($outTime->greaterThan($officeOut)) {
                 $outTime = $officeOut;
             }
+
             $totalMinutes += $inTime->diffInMinutes($outTime);
         }
 
@@ -334,7 +341,7 @@ class AttendanceController extends Controller
         // 🔹 Final status rules
         // Mark as "present" if the employee works the full shift time or more (even if late)
         if ($totalMinutes >= $fullDayMinutes) {
-            $status = $isLate ? 'late' : 'present';
+            $status =  'present';
         } elseif ($totalMinutes >= (4 * 60)) {
             $status = 'short_leave';
         } elseif ($totalMinutes >= (2 * 60)) {
@@ -350,7 +357,7 @@ class AttendanceController extends Controller
                 'actual_minutes'   => $actualMinutes,
                 'overtime_minutes' => $overtimeMinutes,
                 'status'           => $status,
-                'is_late'          => ($status === 'present' && $isLate), // ✅ key logic
+                'is_late'          =>  $isLate, // ✅ key logic
             ]
         );
 
