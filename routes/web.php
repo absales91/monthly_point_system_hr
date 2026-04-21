@@ -41,6 +41,11 @@ Route::middleware(['auth','role:admin'])->group(function () {
    Route::get('/staff-list', [EmployeeController::class, 'index'])
         ->name('employees.index');
 Route::get('/staff/{id}', [EmployeeController::class, 'show'])->name('staff.show');
+Route::post('/staff-delete/{id}', [EmployeeController::class, 'destroy'])->name('staff.delete');
+// Edit
+Route::get('/staff/{id}/edit', [EmployeeController::class, 'edit'])->name('staff.edit');
+Route::post('/staff/{id}/update', [EmployeeController::class, 'update'])->name('staff.update');
+
 
 // routes/web.php
 Route::get('/staff/{id}/attendance', [EmployeeController::class, 'attendance'])

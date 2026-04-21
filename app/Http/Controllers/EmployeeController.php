@@ -71,41 +71,122 @@ class EmployeeController extends Controller
             ->with('success', 'Employee created successfully');
     }
 
+    public function edit($id)
+    {
+        abort_unless(isAdmin(), 403);
+
+        $employee = User::findOrFail($id);
+
+        return view('employees.edit', compact('employee'));
+    }
+
+    public function update(Request $request, $id)
+    {
+        abort_unless(isAdmin(), 403);
+
+        $request->validate([
+            'name'     => 'required|string|max:100',
+            'email'    => 'required|email|unique:users,email,' . $id,
+            'role'     => 'required|in:admin,manager,employee',
+            'password' => 'sometimes|nullable|string|min:6|confirmed',
+
+            'basic_salary' => 'required|numeric|min:0',
+            'working_days' => 'required|integer|min:1',
+
+            'office_in_time' => 'required',
+            'office_out_time' => 'required',
+            'late_minutes_allowed' => 'required|integer|min:0',
+            'half_day_hours' => 'required|integer|min:1',
+        ]);
+
+        $employee = User::findOrFail($id);
+
+        $perDaySalary = $request->basic_salary / $request->working_days;
+
+        $data = [
+            'name'     => $request->name,
+            'email'    => $request->email,
+            'role'     => $request->role,
+
+            // Salary
+            'basic_salary' => $request->basic_salary,
+            'working_days' => $request->working_days,
+            'per_day_salary' => round($perDaySalary, 2),
+
+            // Attendance
+            'office_in_time' => $request->office_in_time,
+            'office_out_time' => $request->office_out_time,
+            'late_minutes_allowed' => $request->late_minutes_allowed,
+            'half_day_hours' => $request->half_day_hours,
+        ];
+
+        // ✅ Only update password if filled
+        if ($request->filled('password')) {
+            $data['password'] = Hash::make($request->password);
+        }
+
+        $employee->update($data);
+
+        return redirect()
+            ->route('employees.index')
+            ->with('success', 'Employee updated successfully');
+    }
+
     public function salarySlipDownload($month, $year)
-{
-    /** @var \App\Models\User $user */
-    $user = auth()->user();
+    {
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
 
-    $attendances = Attendance::where('employee_id',$user->id)
-        ->whereMonth('date',$month)
-        ->whereYear('date',$year)
-        ->get();
+        $attendances = Attendance::where('employee_id', $user->id)
+            ->whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->get();
 
-    $present = $attendances->where('status','present')->count();
-    $halfDay = $attendances->where('status','half_day')->count();
+        $present = $attendances->where('status', 'present')->count();
+        $halfDay = $attendances->where('status', 'half_day')->count();
 
-    $payableDays = $present + ($halfDay * 0.5);
-    $salary = $payableDays * $user->per_day_salary;
+        $payableDays = $present + ($halfDay * 0.5);
+        $salary = $payableDays * $user->per_day_salary;
 
-    $pdf = Pdf::loadView('employee.salary-slip', compact(
-        'user',
-        'present',
-        'halfDay',
-        'payableDays',
-        'salary',
-        'month',
-        'year'
-    ));
+        $pdf = Pdf::loadView('employee.salary-slip', compact(
+            'user',
+            'present',
+            'halfDay',
+            'payableDays',
+            'salary',
+            'month',
+            'year'
+        ));
 
-    return $pdf->download("salary-slip-$month-$year.pdf");
-}
+        return $pdf->download("salary-slip-$month-$year.pdf");
+    }
 
-public function deleteAccount(){
-    return view('delete-account');
+    public function destroy($id)
+    {
+        abort_unless(isAdmin(), 403);
 
-}
+        $employee = User::findOrFail($id);
+        // $employee->delete();
+        // first delete attendance and salary records
+        Attendance::where('employee_id', $id)->delete();
+        DB::table('attendance_logs')->where('employee_id', $id)->delete();
 
- public function deleteAccountStore(Request $request)
+        // also delete notification related to employee
+        DB::table('notifications')->where('employee_id', $id)->delete();
+        Salary::where('employee_id', $id)->delete();
+        $employee->delete();
+
+        return redirect()
+            ->route('employees.index')
+            ->with('success', 'Employee deleted successfully');
+    }
+
+    public function deleteAccount()
+    {
+        return view('delete-account');
+    }
+
+    public function deleteAccountStore(Request $request)
     {
         $request->validate([
             'email' => 'required|email'
@@ -121,42 +202,46 @@ public function deleteAccount(){
     }
 
     public function show($id)
-{
-    $staff = User::findOrFail($id);
+    {
+        $staff = User::findOrFail($id);
 
-    $month = now()->format('Y-m'); // current month
+        $month = now()->format('Y-m'); // current month
 
-    $salaries = Salary::where('employee_id', $id)
-        ->orderBy('month', 'desc')
-        ->get();
+        $salaries = Salary::where('employee_id', $id)
+            ->orderBy('month', 'desc')
+            ->get();
 
-    return view('employees.show', compact('staff', 'month', 'salaries'));
-}
+        return view('employees.show', compact('staff', 'month', 'salaries'));
+    }
 
-public function attendance($id)
-{
-    $staff = User::find($id);
-   
+    public function attendance($id)
+    {
+        $staff = User::find($id);
 
-    $month = request('month', now()->format('Y-m')); // e.g. 2026-02
-    $start = Carbon::parse($month . '-01')->startOfMonth();
-    $end   = Carbon::parse($month . '-01')->endOfMonth();
 
-    $records = Attendance::where('employee_id', $id)
-        ->whereBetween('date', [$start, $end])
-        ->orderBy('date', 'desc')
-        ->get();
+        $month = request('month', now()->format('Y-m')); // e.g. 2026-02
+        $start = Carbon::parse($month . '-01')->startOfMonth();
+        $end   = Carbon::parse($month . '-01')->endOfMonth();
 
-    // Summary counts
-    $present = $records->where('status', 'present')->count();
-    $absent  = $records->where('status', 'absent')->count();
-    $halfDay = $records->where('status', 'half_day')->count();
-    $leave   = $records->where('status', 'leave')->count();
+        $records = Attendance::where('employee_id', $id)
+            ->whereBetween('date', [$start, $end])
+            ->orderBy('date', 'desc')
+            ->get();
 
-    return view('employees.attendance', compact(
-        'staff','records','month',
-        'present','absent','halfDay','leave'
-    ));
-}
+        // Summary counts
+        $present = $records->where('status', 'present')->count();
+        $absent  = $records->where('status', 'absent')->count();
+        $halfDay = $records->where('status', 'half_day')->count();
+        $leave   = $records->where('status', 'leave')->count();
 
+        return view('employees.attendance', compact(
+            'staff',
+            'records',
+            'month',
+            'present',
+            'absent',
+            'halfDay',
+            'leave'
+        ));
+    }
 }
