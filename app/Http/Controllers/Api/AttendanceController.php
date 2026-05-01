@@ -12,6 +12,17 @@ use Illuminate\Support\Facades\DB;
 
 class AttendanceController extends Controller
 {
+    private function getIstDayRangeUtc($date = null)
+    {
+        $ist = $date
+            ? Carbon::parse($date, 'Asia/Kolkata')
+            : Carbon::now('Asia/Kolkata');
+
+        return [
+            $ist->copy()->startOfDay()->timezone('UTC'),
+            $ist->copy()->endOfDay()->timezone('UTC'),
+        ];
+    }
     /**
      * 🔁 SINGLE PUNCH API (IN / OUT)
      */
@@ -25,62 +36,71 @@ class AttendanceController extends Controller
         ]);
 
         $employeeId = $request->user()->id;
-        $now        = Carbon::now('Asia/Kolkata');
-        $today      = $now->toDateString();
+        $now = Carbon::now(); // UTC
 
-        // 🔍 Last punch today
-        $lastPunch = DB::table('attendance_logs')
-            ->where('employee_id', $employeeId)
-            ->where('date', $today)
-            ->orderByDesc('id')
-            ->first();
+        // ✅ Get IST "today" range in UTC
+        [$startUtc, $endUtc] = $this->getIstDayRangeUtc();
 
-        // ❌ Prevent invalid sequences
-        if (!$lastPunch && $request->type === 'out') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Punch IN required first',
-            ], 400);
-        }
+        DB::beginTransaction();
 
-        if ($lastPunch && $lastPunch->punch_type === $request->type) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid punch sequence',
-            ], 400);
-        }
+        try {
+            DB::table('users')->where('id', $employeeId)->lockForUpdate()->first();
+            // 🔍 Last punch today
+            $lastPunch = DB::table('attendance_logs')
+                ->where('employee_id', $employeeId)
+                ->whereBetween('created_at', [$startUtc, $endUtc])
+                ->lockForUpdate()
+                ->orderByDesc('id')
+                ->first();
 
-        // 📸 Store image
-        $image = $request->file('image');
-        $filename = uniqid() . '_' . $image->getClientOriginalName();
-        $destination = public_path('attendance');
+            // ❌ Prevent invalid sequences
+            if (!$lastPunch && $request->type === 'out') {
+                DB::rollBack(); // ✅ MUST DO THIS
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Punch IN required first',
+                ], 400);
+            }
 
-        if (!is_dir($destination)) {
-            mkdir($destination, 0755, true);
-        }
+            if ($lastPunch && $lastPunch->punch_type === $request->type) {
+                DB::rollBack(); // ✅ MUST DO THIS    
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid punch sequence',
+                ], 400);
+            }
 
-        $image->move($destination, $filename);
-        $imagePath = 'attendance/' . $filename;
+            // 📸 Store image
 
-        // Duplicate prevention (10 seconds)
-        $recentPunch = DB::table('attendance_logs')
-            ->where('employee_id', $employeeId)
-            ->where('punch_type', $request->type)
-            ->where('created_at', '>=', $now->copy()->subSeconds(10))
-            ->exists();
+            // Duplicate prevention (10 seconds)
+            $recentPunch = DB::table('attendance_logs')
+                ->where('employee_id', $employeeId)
+                ->where('punch_type', $request->type)
+                ->where('created_at', '>=', $now->copy()->subSeconds(10))
+                ->exists();
 
-        if ($recentPunch) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Punch already recorded. Please wait.',
-            ], 429);
-        }
+            if ($recentPunch) {
+                DB::rollBack(); // ✅ MUST DO THIS
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Punch already recorded. Please wait.',
+                ], 429);
+            }
+            $image = $request->file('image');
+            $filename = uniqid() . '_' . $image->getClientOriginalName();
+            $destination = public_path('attendance');
 
-        DB::transaction(function () use ($employeeId, $today, $now, $request, $imagePath) {
+            if (!is_dir($destination)) {
+                mkdir($destination, 0755, true);
+            }
+
+            $image->move($destination, $filename);
+            $imagePath = 'attendance/' . $filename;
+
 
             DB::table('attendance_logs')->insert([
                 'employee_id' => $employeeId,
-                'date'        => $today,
+                'date'        => $now->copy()->timezone('Asia/Kolkata')->toDateString(),
                 'punch_type'  => $request->type,
                 'image'       => $imagePath,
                 'latitude'    => $request->latitude,
@@ -92,144 +112,26 @@ class AttendanceController extends Controller
                 $this->calculateTodayAttendance($employeeId);
             }
             // Recalculate inside SAME transaction
-        });
 
 
-        return response()->json([
-            'success'    => true,
-            'message'    => strtoupper($request->type) . ' punch successful',
-            'time'       => $now->format('H:i:s'),
-            'last_punch' => $request->type,
-        ]);
+            DB::commit();
+            return response()->json([
+                'success'    => true,
+                'message'    => strtoupper($request->type) . ' punch successful',
+                'time'       => $now->copy()->timezone('Asia/Kolkata')->format('H:i:s'),
+                'last_punch' => $request->type,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Punch failed: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
-    /**
-     * ⏱ Calculate today's working minutes & status
-     */
-    // private function calculateTodayAttendance($employeeId)
-    // {
-    //     $today = Carbon::now('Asia/Kolkata')->toDateString();
 
-    //     $user = DB::table('users')->where('id', $employeeId)->first();
-    //     if (!$user) {
-    //         throw new \Exception("User not found for attendance calculation.");
-    //     }
-
-    //     $defaults = $this->getOfficeDefaults();
-
-    //     $officeInTime  = $user->office_in_time ?? $defaults['office_in'];
-    //     $officeOutTime = $user->office_out_time ?? $defaults['office_out'];
-    //     $halfDayHours  = $user->half_day_hours ?? $defaults['half_day_hours'];
-    //     $lateGrace     = $user->late_minutes_allowed ?? $defaults['late_minutes_allowed'];
-
-    //     $officeIn  = Carbon::parse($today . ' ' . $officeInTime);
-    //     $officeOut = Carbon::parse($today . ' ' . $officeOutTime);
-
-    //     $fullDayMinutes = $officeIn->diffInMinutes($officeOut);
-    //     $halfDayMinutes = $halfDayHours * 60;
-
-    //     $logs = DB::table('attendance_logs')
-    //         ->where('employee_id', $employeeId)
-    //         ->where('date', $today)
-    //         ->orderBy('created_at')
-    //         ->get();
-
-    //     if ($logs->isEmpty()) {
-    //         Attendance::updateOrCreate(
-    //             ['employee_id' => $employeeId, 'date' => $today],
-    //             [
-    //                 'working_minutes' => 0,
-    //                 'actual_minutes'  => 0,
-    //                 'overtime_minutes' => 0,
-    //                 'status' => 'absent'
-    //             ]
-    //         );
-    //         return 0;
-    //     }
-
-    //     $firstInLog = $logs->firstWhere('punch_type', 'in');
-
-    //     if (!$firstInLog) {
-    //         Attendance::updateOrCreate(
-    //             ['employee_id' => $employeeId, 'date' => $today],
-    //             [
-    //                 'working_minutes' => 0,
-    //                 'actual_minutes'  => 0,
-    //                 'overtime_minutes' => 0,
-    //                 'status' => 'absent'
-    //             ]
-    //         );
-    //         return 0;
-    //     }
-
-    //     // 🔁 Pair IN/OUT safely
-    //     $totalMinutes = 0;
-    //     $inTime = null;
-
-    //     foreach ($logs as $log) {
-
-    //         if ($log->punch_type === 'in') {
-    //             $inTime = Carbon::parse($log->created_at);
-    //         }
-
-    //         if ($log->punch_type === 'out' && $inTime) {
-    //             $outTime = Carbon::parse($log->created_at);
-
-    //             if ($outTime->greaterThanOrEqualTo($inTime)) {
-    //                 $totalMinutes += $inTime->diffInMinutes($outTime);
-    //             }
-
-    //             $inTime = null;
-    //         }
-    //     }
-
-    //     // If still IN without OUT
-    //     if ($inTime) {
-    //         $outTime = Carbon::now('Asia/Kolkata');
-    //         if ($outTime->greaterThan($officeOut)) {
-    //             $outTime = $officeOut;
-    //         }
-    //         $totalMinutes += $inTime->diffInMinutes($outTime);
-    //     }
-
-    //     // 🔹 Late check
-    //     $firstIn = Carbon::parse($firstInLog->created_at);
-    //     $lateCutoff = $officeIn->copy()->addMinutes($lateGrace);
-    //     $isLate = $firstIn->greaterThan($lateCutoff);
-
-    //     // Preserve real total before capping
-    //     $actualMinutes = $totalMinutes;
-    //     $overtimeMinutes = $totalMinutes > $fullDayMinutes
-    //         ? ($totalMinutes - $fullDayMinutes)
-    //         : 0;
-
-    //     // Cap for attendance status
-    //     $totalMinutes = min($totalMinutes, $fullDayMinutes);
-
-    //     // 🔹 Final status rules
-    //     if ($totalMinutes >= $fullDayMinutes) {
-    //         $status = $isLate ? 'late' : 'present';
-    //     } elseif ($totalMinutes >= (4 * 60)) {
-    //         $status = 'short_leave';
-    //     } elseif ($totalMinutes >= (2 * 60)) {
-    //         $status = 'half_day';
-    //     } else {
-    //         $status = 'absent';
-    //     }
-
-    //     Attendance::updateOrCreate(
-    //         ['employee_id' => $employeeId, 'date' => $today],
-    //         [
-    //             'working_minutes'  => $totalMinutes,
-    //             'actual_minutes'   => $actualMinutes,
-    //             'overtime_minutes' => $overtimeMinutes,
-    //             'status'           => $status,
-    //             'is_late'          => ($status === 'present' && $isLate), // ✅ key logic
-    //         ]
-    //     );
-
-    //     return $totalMinutes;
-    // }
     private function calculateTodayAttendance($employeeId)
     {
         $today = Carbon::now('Asia/Kolkata')->toDateString();
@@ -253,10 +155,12 @@ class AttendanceController extends Controller
         $fullDayMinutes = $officeIn->diffInMinutes($officeOut); // 9 hours = 540 minutes
         $halfDayMinutes = $halfDayHours * 60; // e.g., 4 hours = 240 minutes
 
-        // Get the attendance logs for today
+        [$startUtc, $endUtc] = $this->getIstDayRangeUtc();
+
+
         $logs = DB::table('attendance_logs')
             ->where('employee_id', $employeeId)
-            ->where('date', $today)
+            ->whereBetween('created_at', [$startUtc, $endUtc])
             ->orderBy('created_at')
             ->get();
 
@@ -297,13 +201,13 @@ class AttendanceController extends Controller
             if ($log->punch_type === 'in') {
 
                 if (!$inTime) {
-                    $inTime = Carbon::parse($log->created_at);
+                    $inTime = Carbon::parse($log->created_at)->timezone('Asia/Kolkata');
                 }
             }
 
             if ($log->punch_type === 'out' && $inTime) {
 
-                $outTime = Carbon::parse($log->created_at);
+                $outTime = Carbon::parse($log->created_at)->timezone('Asia/Kolkata');
 
                 if ($outTime->greaterThanOrEqualTo($inTime)) {
                     $totalMinutes += $inTime->diffInMinutes($outTime);
@@ -315,7 +219,7 @@ class AttendanceController extends Controller
 
         if ($inTime) {
 
-            $outTime = Carbon::now('Asia/Kolkata');
+           $outTime = now('Asia/Kolkata')->min($officeOut);
 
             if ($outTime->greaterThan($officeOut)) {
                 $outTime = $officeOut;
@@ -325,7 +229,7 @@ class AttendanceController extends Controller
         }
 
         // 🔹 Late check
-        $firstIn = Carbon::parse($firstInLog->created_at);
+        $firstIn = Carbon::parse($firstInLog->created_at)->timezone('Asia/Kolkata');
         $lateCutoff = $officeIn->copy()->addMinutes($lateGrace);
         $isLate = $firstIn->greaterThan($lateCutoff);
 
@@ -338,13 +242,18 @@ class AttendanceController extends Controller
         // Cap for attendance status
         $totalMinutes = min($totalMinutes, $fullDayMinutes);
 
-        // 🔹 Final status rules
-        // Mark as "present" if the employee works the full shift time or more (even if late)
-        if ($totalMinutes >= $fullDayMinutes) {
-            $status =  'present';
-        } elseif ($totalMinutes >= (4 * 60)) {
+        // 🔹 Final status rules - Dynamic based on shift time
+        // Present: >= 90% of expected shift
+        $fullDayThreshold = $fullDayMinutes * 0.9;
+        // Half-day: >= 50% of expected shift (or half_day_hours config, whichever is lower)
+        $halfDayThreshold = min($fullDayMinutes * 0.5, $halfDayMinutes);
+        $shortLeaveThreshold = $fullDayMinutes * 0.75; // 75%
+
+        if ($totalMinutes >= $fullDayThreshold) {
+            $status = 'present';
+        } elseif ($totalMinutes >= $shortLeaveThreshold) {
             $status = 'short_leave';
-        } elseif ($totalMinutes >= (2 * 60)) {
+        } elseif ($totalMinutes >= $halfDayThreshold) {
             $status = 'half_day';
         } else {
             $status = 'absent';
@@ -443,7 +352,7 @@ class AttendanceController extends Controller
                 return [
                     'type' => $row->punch_type, // in / out
                     'time' => Carbon::parse($row->created_at)
-                        // ->timezone('Asia/Kolkata')
+                        ->timezone('Asia/Kolkata')
                         ->format('h:i A'),
                     'image' => url($row->image),
                     'latitude' => $row->latitude,
@@ -518,7 +427,7 @@ class AttendanceController extends Controller
                 DB::raw("MIN(CASE WHEN punch_type = 'in' THEN created_at END) as check_in"),
                 DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
             )
-            ->whereDate('created_at', $date)
+            ->whereDate(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), $date)
             ->groupBy('employee_id')
             ->get()
             ->keyBy('employee_id');
@@ -544,21 +453,29 @@ class AttendanceController extends Controller
                 $workedMinutes = $attendances[$employee->id]->actual_minutes ?? 0;
 
                 $checkIn = isset($logs[$employee->id]->check_in)
-                    ? Carbon::parse($logs[$employee->id]->check_in)
+                    ? Carbon::parse($logs[$employee->id]->check_in)->timezone('Asia/Kolkata')
                     : null;
 
                 $checkOut = isset($logs[$employee->id]->check_out)
-                    ? Carbon::parse($logs[$employee->id]->check_out)
+                    ? Carbon::parse($logs[$employee->id]->check_out)->timezone('Asia/Kolkata')
                     : null;
 
                 // Convert minutes to HH:MM format
                 $hoursWorked = gmdate("H:i", $workedMinutes * 60);
 
-                // Less Hours (< 8 hours)
-                if ($workedMinutes < 480) $lessHours++;
+                // Get employee's shift time
+                $empOfficeIn = $employee->office_in_time ?: $this->getOfficeDefaults()['office_in'];
+                $empOfficeOut = $employee->office_out_time ?: $this->getOfficeDefaults()['office_out'];
+                $empOfficeInParsed = Carbon::parse($date . ' ' . $empOfficeIn);
+                $empOfficeOutParsed = Carbon::parse($date . ' ' . $empOfficeOut);
+                $expectedShiftMinutes = $empOfficeInParsed->diffInMinutes($empOfficeOutParsed);
 
-                // Overtime (> 9 hours)
-                if ($workedMinutes > 540) $overtime++;
+                // Less Hours (< 90% of expected shift)
+                $lessHoursThreshold = $expectedShiftMinutes * 0.9;
+                if ($workedMinutes < $lessHoursThreshold) $lessHours++;
+
+                // Overtime (> expected shift)
+                if ($workedMinutes > $expectedShiftMinutes) $overtime++;
 
                 $staff[] = [
                     'id' => $employee->id,
@@ -649,14 +566,16 @@ class AttendanceController extends Controller
 
         $attendances = DB::table('attendances')
             ->select(
-                DB::raw("DATE(date) as date"),
+                'date',
                 'actual_minutes',
                 'status'
             )
             ->where('employee_id', $user->id)
             ->whereBetween('date', [$startDate, $endDate])
             ->get()
-            ->keyBy('date');
+            ->keyBy(function ($item) {
+                return Carbon::parse($item->date)->toDateString();
+            });
 
         /*
     |--------------------------------------------------------------------------
@@ -666,13 +585,13 @@ class AttendanceController extends Controller
 
         $logs = DB::table('attendance_logs')
             ->select(
-                DB::raw("DATE(created_at) as date"),
+                DB::raw("DATE(CONVERT_TZ(created_at,'+00:00','+05:30')) as date"),
                 DB::raw("MIN(CASE WHEN punch_type = 'in' THEN created_at END) as check_in"),
                 DB::raw("MAX(CASE WHEN punch_type = 'out' THEN created_at END) as check_out")
             )
             ->where('employee_id', $user->id)
-            ->whereBetween('created_at', [$startDate, $endDate])
-            ->groupBy(DB::raw("DATE(created_at)"))
+            ->whereBetween(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), [$startDate, $endDate])
+            ->groupBy(DB::raw("DATE(CONVERT_TZ(created_at,'+00:00','+05:30'))"))
             ->get()
             ->keyBy('date');
 
@@ -685,8 +604,6 @@ class AttendanceController extends Controller
         $present = 0;
         $absent = 0;
         $halfDay = 0;
-        $shortLeave = 0;
-        $paidLeave = 0;
         $overtimeDays = 0;
 
         $attendanceList = [];
@@ -720,11 +637,11 @@ class AttendanceController extends Controller
                 $status = $attendances[$dateKey]->status ?? 'absent';
 
                 $checkIn = isset($logs[$dateKey]->check_in)
-                    ? Carbon::parse($logs[$dateKey]->check_in)
+                    ? Carbon::parse($logs[$dateKey]->check_in)->timezone('Asia/Kolkata')
                     : null;
 
                 $checkOut = isset($logs[$dateKey]->check_out)
-                    ? Carbon::parse($logs[$dateKey]->check_out)
+                    ? Carbon::parse($logs[$dateKey]->check_out)->timezone('Asia/Kolkata')
                     : null;
 
                 $hoursWorked = gmdate("H:i", $workedMinutes * 60);
@@ -739,19 +656,19 @@ class AttendanceController extends Controller
                         $halfDay++;
                         break;
 
-                    case 'short_leave':
-                        $shortLeave++;
-                        break;
-
-                    case 'paid_leave':
-                        $paidLeave++;
-                        break;
-
                     default:
                         $absent++;
                 }
 
-                if ($workedMinutes > 540) {
+                // Get employee's expected shift for overtime check
+                $empOfficeIn = $user->office_in_time ?: $this->getOfficeDefaults()['office_in'];
+                $empOfficeOut = $user->office_out_time ?: $this->getOfficeDefaults()['office_out'];
+                $empOfficeInParsed = Carbon::parse($dateKey . ' ' . $empOfficeIn);
+                $empOfficeOutParsed = Carbon::parse($dateKey . ' ' . $empOfficeOut);
+                $expectedShiftMinutes = $empOfficeInParsed->diffInMinutes($empOfficeOutParsed);
+
+                // Overtime when worked > expected shift
+                if ($workedMinutes > $expectedShiftMinutes) {
                     $overtimeDays++;
                 }
             } else {
@@ -789,8 +706,6 @@ class AttendanceController extends Controller
                 'present' => $present,
                 'absent' => $absent,
                 'half_day' => $halfDay,
-                'short_leave' => $shortLeave,
-                'paid_leave' => $paidLeave,
                 'overtime_days' => $overtimeDays,
             ],
             'attendance' => $attendanceList
@@ -821,27 +736,37 @@ class AttendanceController extends Controller
 
         try {
 
-            // 🎯 Calculate minutes based on status
+            // 🎯 Get employee's shift to calculate minutes
+            $employee = User::where('id', $request->employee_id)->first();
+            $defaults = $this->getOfficeDefaults();
+
+            $officeInTime = $employee->office_in_time ?? $defaults['office_in'];
+            $officeOutTime = $employee->office_out_time ?? $defaults['office_out'];
+
+            $officeIn = Carbon::parse($date->toDateString() . ' ' . $officeInTime);
+            $officeOut = Carbon::parse($date->toDateString() . ' ' . $officeOutTime);
+            $expectedShiftMinutes = $officeIn->diffInMinutes($officeOut);
+
+            // Calculate minutes based on status
             $workingMinutes = 0;
             $actualMinutes = 0;
 
             if ($request->status === 'present') {
-                $workingMinutes = 480;      // 8 hours
-                $actualMinutes = 480;
+                $workingMinutes = $expectedShiftMinutes;     // Full shift
+                $actualMinutes = $expectedShiftMinutes;
             }
 
             if ($request->status === 'half_day') {
-                $workingMinutes = 240;      // 4 hours
-                $actualMinutes = 240;
+                $workingMinutes = (int)($expectedShiftMinutes * 0.5); // 50% of shift
+                $actualMinutes = (int)($expectedShiftMinutes * 0.5);
             }
 
             // ❌ Absent / Paid Leave = 0 minutes
-            $start = $date->startOfDay();
-            $end   = $date->copy()->endOfDay();
+            $dateStringForDb = $date->toDateString();
 
             DB::table('attendance_logs')
                 ->where('employee_id', $request->employee_id)
-                ->whereBetween('created_at', [$start, $end])
+                ->where('date', $dateStringForDb)
                 ->delete();
 
             $attendance = Attendance::updateOrCreate(

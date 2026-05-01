@@ -88,17 +88,25 @@ class AutoOutPunchCron extends Command
                 */
 
                 $lastLog = $logs->last();
-                $outTime = Carbon::parse($today . ' ' . $officeOutTime, $timezone);
 
+                // Check if auto-out punch already exists to prevent duplicates
+                $autoOutExists = DB::table('attendance_logs')
+                    ->where('employee_id', $employeeId)
+                    ->whereDate(DB::raw("CONVERT_TZ(created_at,'+00:00','+05:30')"), $today)
+                    ->where('punch_type', 'out')
+                    ->exists();
 
-                if ($lastLog->punch_type === 'in') {
+                if ($lastLog->punch_type === 'in' && !$autoOutExists) {
+
+                    // Use employee's scheduled office_out_time for auto-punch
+                    $outTime = Carbon::parse($today . ' ' . $officeOutTime, $timezone);
 
                     DB::table('attendance_logs')->insert([
                         'employee_id' => $employeeId,
                         'date'        => $today,
                         'punch_type'  => 'out',
-                        'created_at'  => $outTime,
-                        'updated_at'  => $outTime,
+                        'created_at'  => $outTime->utc(),
+                        'updated_at'  => $outTime->utc(),
                     ]);
 
                     $logs = DB::table('attendance_logs')
@@ -137,7 +145,9 @@ class AutoOutPunchCron extends Command
                 }
 
                 if ($lastIn) {
-                    $workedMinutes += $now->diffInMinutes($lastIn);
+                    // Punch out was inserted at $now, so calculate to $now
+                    $lastOut = Carbon::parse($logs->last()->created_at)->timezone($timezone);
+                    $workedMinutes += $lastOut->diffInMinutes($lastIn);
                 }
 
                 $workedMinutes = max(0, $workedMinutes);
@@ -172,13 +182,22 @@ class AutoOutPunchCron extends Command
                 |--------------------------------------------------------------------------
                 */
 
-                $halfDayMinutes = $halfDayHours * 60;
+                // Calculate expected shift duration from office in/out times
+                $officeInParsed = Carbon::parse($today . ' ' . $officeInTime, $timezone);
+                $officeOutParsed = Carbon::parse($today . ' ' . $officeOutTime, $timezone);
+                $expectedShiftMinutes = $officeOutParsed->diffInMinutes($officeInParsed);
 
-                if ($workedMinutes >= 480) {
+                // Mark as present if worked >= 90% of expected shift
+                $fullDayThreshold = $expectedShiftMinutes * 0.9;
+                
+                // Mark as half-day if worked >= 50% of expected shift (or half_day_hours, whichever is lower)
+                $halfDayThreshold = min($expectedShiftMinutes * 0.5, $halfDayHours * 60);
+
+                if ($workedMinutes >= $fullDayThreshold) {
 
                     $status = 'present';
 
-                } elseif ($workedMinutes >= $halfDayMinutes) {
+                } elseif ($workedMinutes >= $halfDayThreshold) {
 
                     $status = 'half_day';
 

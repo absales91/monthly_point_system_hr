@@ -9,70 +9,85 @@ use Illuminate\Support\Facades\DB;
 class MarkAbsentCron extends Command
 {
     protected $signature = 'attendance:mark-absent';
-
     protected $description = 'Mark absent for employees who did not punch today';
 
     public function handle()
     {
-        $now = Carbon::now('Asia/Kolkata');
-        $today = $now->toDateString();
-        $officeStart = Carbon::parse($today . ' 10:00:00');
-        if ($now->isSunday()) {
-            $this->info("Today is Sunday. Skipping absent marking.");
+        $nowIst = Carbon::now('Asia/Kolkata');
+        $today  = $nowIst->toDateString();
+
+        // ❌ Skip Sunday (you can extend for holidays later)
+        if ($nowIst->isSunday()) {
+            $this->info("Sunday detected. Skipping.");
             return;
         }
 
-        $employees = DB::table('users')
+        // ✅ Get IST day range in UTC
+        [$startUtc, $endUtc] = $this->getIstDayRangeUtc();
+        $nowUtc = Carbon::now();
+
+        // ✅ Process in chunks (scalable)
+        DB::table('users')
             ->where('role', 'employee')
-            ->where(function ($q) use ($today, $officeStart) {
-                $q->whereDate('created_at', '<', $today)
-                    ->orWhere(function ($q2) use ($today, $officeStart) {
-                        $q2->whereDate('created_at', '=', $today)
-                            ->whereTime('created_at', '<', $officeStart);
-                    });
-            })
-            ->get();
+            ->orderBy('id')
+            ->chunk(100, function ($employees) use ($startUtc, $endUtc, $today,$nowUtc) {
+
+                foreach ($employees as $employee) {
+
+                    // ✅ Check if any punch exists today (UTC-safe)
+                    $hasPunch = DB::table('attendance_logs')
+                        ->where('employee_id', $employee->id)
+                        ->whereBetween('created_at', [$startUtc, $endUtc])
+                        ->exists();
+
+                    if ($hasPunch) {
+                        continue;
+                    }
+
+                    // ✅ Skip if already marked
+                    $exists = DB::table('attendances')
+                        ->where('employee_id', $employee->id)
+                        ->where('date', $today)
+                        ->exists();
+
+                    if ($exists) {
+                        continue;
+                    }
 
 
-        foreach ($employees as $employee) {
+                    // ✅ Mark absent
+                    DB::table('attendances')->updateOrInsert(
+                        [
+                            'employee_id' => $employee->id,
+                            'date'        => $today,
+                        ],
+                        [
+                            'working_minutes'  => 0,
+                            'actual_minutes'   => 0,
+                            'overtime_minutes' => 0,
+                            'status'           => 'absent',
+                            'created_at'       => $nowUtc,
+                            'updated_at'       => $nowUtc,
+                        ]
+                    );
+                }
+            });
 
-            /**
-             * STEP 1: Check if employee has ANY punch today
-             */
-            $hasPunch = DB::table('attendance_logs')
-                ->where('employee_id', $employee->id)
-                ->whereDate('date', $today)
-                ->exists();
+        $this->info("Absent marking completed for {$today}");
+    }
 
-            if ($hasPunch) {
-                continue; // present or half-day will be handled separately
-            }
+    /**
+     * Convert IST day start/end to UTC range
+     */
+    private function getIstDayRangeUtc($date = null)
+    {
+        $ist = $date
+            ? Carbon::parse($date, 'Asia/Kolkata')
+            : Carbon::now('Asia/Kolkata');
 
-            /**
-             * STEP 2: Check if attendance already marked
-             */
-            $attendanceExists = DB::table('attendances')
-                ->where('employee_id', $employee->id)
-                ->where('date', $today)
-                ->exists();
-
-            if ($attendanceExists) {
-                continue;
-            }
-
-            /**
-             * STEP 3: Mark ABSENT in attendances table
-             */
-            DB::table('attendances')->updateOrInsert([
-                'employee_id'     => $employee->id,
-                'date'            => $today,
-                'working_minutes' => 0,
-                'status'          => 'absent',
-                'created_at'      => now(),
-                'updated_at'      => now(),
-            ]);
-        }
-
-        $this->info("Absent marked successfully for date: {$today}");
+        return [
+            $ist->copy()->startOfDay()->timezone('UTC'),
+            $ist->copy()->endOfDay()->timezone('UTC'),
+        ];
     }
 }
