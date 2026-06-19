@@ -34,6 +34,7 @@ class User extends Authenticatable
     'office_out_time',
     'late_minutes_allowed',
     'half_day_hours',
+    'fcm_token',
     ];
 
     /**
@@ -74,5 +75,10 @@ function isAdminOrManager()
 {
     return auth()->check() &&
            in_array(auth()->user()->role, ['admin','manager']);
+}
+
+public function attendances()
+{
+    return $this->hasMany(Attendance::class, 'employee_id');
 }
 }

@@ -1,0 +1,113 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Task;
+use App\Models\TaskLog;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+
+class TaskController extends Controller
+{
+ public function mytask()
+{
+    $tasks = Task::where('assigned_to', auth()->id())
+        ->with([
+            'assignedBy:id,name',
+            'assignedTo:id,name',
+            'logs' => function ($q) {
+                $q->with('employee:id,name')
+                  ->latest();
+            }
+        ])
+        ->latest()
+        ->get();
+
+    // ✅ append image_url for each log
+    $tasks->each(function ($task) {
+        $task->logs->each(function ($log) {
+            $log->image = $log->image
+                ? asset($log->image)
+                : null;
+        });
+    });
+
+    return response()->json([
+        'status' => 'ok',
+        'tasks' => $tasks,
+    ]);
+}
+
+
+
+    public function saveTaskLog(Request $request)
+    {
+        $request->validate([
+            'task_id' => 'required|exists:tasks,id',
+            'message' => 'required|string',
+            'image' => 'nullable|image|max:2048',
+        ]);
+        if ($request->hasFile('image')) {
+            $image = $request->file('image');
+            $filename = uniqid() . '_' . $image->getClientOriginalName();
+            $destination = public_path('task_logs');
+
+            if (!is_dir($destination)) {
+                mkdir($destination, 0755, true);
+            }
+
+            $image->move($destination, $filename);
+
+            $path = 'task_logs/' . $filename;
+        }
+
+
+        $log = TaskLog::create([
+            'task_id' => $request->task_id,
+            'employee_id' => auth()->id(),
+            'note' => $request->message,
+            'image' => $path ?? null,
+        ]);
+
+
+        return response()->json([
+            'status' => true,
+            'data' => $log
+        ], 201);
+    }
+
+     public function updateStatus(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'task_id' => 'required|exists:tasks,id',
+            'status'  => 'required|in:pending,in_progress,completed',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first()
+            ], 422);
+        }
+
+        $task = Task::find($request->task_id);
+
+        // Optional: ensure task belongs to logged-in user
+        // if ($task->user_id != auth()->id()) {
+        //     return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        // }
+
+        $task->status = $request->status;
+        $task->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Task status updated successfully',
+            'data' => [
+                'task_id' => $task->id,
+                'status' => $task->status
+            ]
+        ]);
+    }
+}

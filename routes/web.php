@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\AdminProductCategoryController;
+use App\Http\Controllers\AdminTaskController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
@@ -12,6 +14,7 @@ use App\Http\Controllers\RewardRuleController;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome');
+Route::view('/privacy-policy', 'privacy-policy')->name('privacy-policy');
 
 Route::get('dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])
@@ -23,7 +26,7 @@ Route::view('profile', 'profile')
 
 Route::middleware(['auth','role:admin,manager'])->group(function(){
 
-    Route::get('/attendance',[AttendanceController::class,'index'])
+    Route::get('/manage-attendance',[AttendanceController::class,'index'])
         ->name('attendance.index');
 
     Route::post('/attendance/store',[AttendanceController::class,'store'])
@@ -35,8 +38,19 @@ Route::middleware(['auth','role:admin,manager'])->group(function(){
 
 
 Route::middleware(['auth','role:admin'])->group(function () {
-   Route::get('/employees', [EmployeeController::class, 'index'])
+   Route::get('/staff-list', [EmployeeController::class, 'index'])
         ->name('employees.index');
+Route::get('/staff/{id}', [EmployeeController::class, 'show'])->name('staff.show');
+Route::post('/staff-delete/{id}', [EmployeeController::class, 'destroy'])->name('staff.delete');
+// Edit
+Route::get('/staff/{id}/edit', [EmployeeController::class, 'edit'])->name('staff.edit');
+Route::post('/staff/{id}/update', [EmployeeController::class, 'update'])->name('staff.update');
+
+
+// routes/web.php
+Route::get('/staff/{id}/attendance', [EmployeeController::class, 'attendance'])
+     ->name('employees.attendance');
+
 
     Route::get('/employees/create', [EmployeeController::class, 'create'])
         ->name('employees.create');
@@ -68,6 +82,32 @@ Route::middleware(['auth','role:admin'])->group(function () {
     Route::post('/reward-rules', [RewardRuleController::class, 'store'])
         ->name('reward-rules.store');
 
+    Route::get('/tasks', [AdminTaskController::class, 'index'])
+        ->name('admin.tasks.index');
+
+    Route::get('/tasks/create', [AdminTaskController::class, 'create'])
+        ->name('admin.tasks.create');
+
+    Route::get('/tasks/{task}', [AdminTaskController::class, 'show'])
+        ->name('admin.tasks.show');
+
+    Route::post('/tasks', [AdminTaskController::class, 'store'])
+        ->name('admin.tasks.store');
+    Route::post('/admin/tasks/{task}/logs', [AdminTaskController::class, 'storeLog'])
+    ->name('admin.tasks.logs.store');
+    Route::delete('/tasks/{task}', [AdminTaskController::class, 'destroy'])
+        ->name('admin.tasks.destroy');
+
+    // product categories
+     Route::get('/categories', [AdminProductCategoryController::class, 'index']);
+    Route::get('/categories/create', [AdminProductCategoryController::class, 'create'])->name('admin.categories.create');
+    Route::post('/categories', [AdminProductCategoryController::class, 'store']);
+
+    // Products
+    Route::get('/products', [AdminProductCategoryController::class, 'index']);
+    Route::get('/products/create', [AdminProductCategoryController::class, 'create']);
+    Route::post('/products', [AdminProductCategoryController::class, 'store']);
+
 });
 
 Route::middleware(['auth','role:admin,manager'])->group(function () {
@@ -94,6 +134,9 @@ Route::middleware(['auth','role:employee,manager'])->group(function(){
 
       Route::get('/my-attendance',[AttendanceController::class,'myAttendance'])
         ->name('attendance.my');
+    Route::get('/attendance/{date}',
+    [AttendanceController::class, 'show']
+)->name('employee.attendance.show');
 
     Route::post('/attendance/check-in',[AttendanceController::class,'checkIn'])
         ->name('attendance.checkin');
@@ -109,11 +152,15 @@ Route::middleware(['auth','role:employee,manager'])->group(function(){
 
 Route::middleware(['auth','role:employee'])->group(function(){
 
-   
 
-   
+
+
 });
 
-    
+Route::get('/delete-account',[EmployeeController::class,'deleteAccount']);
+Route::post('/delete-account',[EmployeeController::class,'deleteAccountStore'])
+    ->name('delete-account.store');
+
+
 
 require __DIR__.'/auth.php';

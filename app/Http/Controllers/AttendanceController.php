@@ -4,28 +4,65 @@ namespace App\Http\Controllers;
 
 use App\Models\Attendance;
 use App\Models\Employee;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class AttendanceController extends Controller
 {
     /* ================= ADMIN ================= */
 
     public function index()
-    {
-        $employees = Employee::all();
-        $date = now()->toDateString();
+{
+    $date = now()->toDateString();
 
-        $records = Attendance::with('employee')
-            ->where('date', $date)
-            ->get();
+    $employees = User::where('role', 'employee')
+        ->with(['attendances' => function ($q) use ($date) {
+            $q->where('date', $date);
+        }])
+        ->get();
 
-        return view('attendance.admin.index', compact(
-            'employees',
-            'records',
-            'date'
-        ));
-    }
+    $records = Attendance::where('date', $date)
+        ->with('employee')
+        ->get();
+
+    // ---- SUMMARY COUNTS ----
+    $totalStaff = $employees->count();
+
+    $present = $records->where('status', 'present')->count();
+    $absent = $records->where('status', 'absent')->count();
+    $halfDay = $records->where('status', 'half_day')->count();
+    $leave = $records->where('status', 'leave')->count();
+
+    // ---- OVERTIME & FINE (in minutes) ----
+    $totalOvertimeMinutes = $records->sum('overtime_minutes');
+
+    // Convert to hours + minutes
+    $overtimeHours = intdiv($totalOvertimeMinutes, 60);
+    $overtimeMins = $totalOvertimeMinutes % 60;
+
+    // (If you don’t have fine yet, keep 0)
+    $fineHours = 0;
+    $fineMins = 0;
+
+    return view('attendance.admin.index', compact(
+        'employees',
+        'records',
+        'date',
+        'totalStaff',
+        'present',
+        'absent',
+        'halfDay',
+        'leave',
+        'overtimeHours',
+        'overtimeMins',
+        'fineHours',
+        'fineMins'
+    ));
+}
+
+
 
     public function store(Request $request)
     {
@@ -53,11 +90,31 @@ class AttendanceController extends Controller
     public function myAttendance()
     {
         $records = Attendance::with('employee')
-            ->where('employee_id', auth()->user()->employee->id)
+            ->where('employee_id', auth()->user()->id)
             ->orderByDesc('date')
             ->get();
 
         return view('attendance.employee.my', compact('records'));
+    }
+
+    public function show($date)
+    {
+        $employeeId = auth()->user()->id;
+
+        $attendance = Attendance::where('employee_id', $employeeId)
+            ->where('date', $date)
+            ->first();
+
+        if (!$attendance) {
+            return redirect()->back()->with('error', 'No attendance record found for the selected date.');
+        }
+        $logs = DB::table('attendance_logs')
+            ->where('employee_id', $employeeId)
+            ->where('date', $date)
+            ->orderBy('created_at')
+            ->get();
+
+        return view('attendance.employee.show', compact('attendance', 'date','logs'));
     }
 
     public function checkIn()
